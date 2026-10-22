@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <AssemblyName>ZERO</AssemblyName>
+    <RootNamespace>ZERO</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>ZERO</Product>
+    <Company>GMC</Company>
+    <Authors>GMC</Authors>
+    <Copyright>Copyright © 2026 GMC</Copyright>
+    <Description>把本地电脑通过 MCP 安全地开放给任意支持 MCP 的 AI</Description>
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- Release 不生成 pdb；单文件/自包含等发布参数见 Properties\PublishProfiles\win-x64.pubxml -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MCP 服务脚本以嵌入资源形式打包进 exe，运行时释放到 runtime\server.py -->
+    <EmbeddedResource Include="Resources\server.py" LogicalName="server.py" />
+    <Resource Include="Resources\app.ico" />
+    <None Include="Properties\PublishProfiles\*.pubxml" />
+  </ItemGroup>
+</Project>

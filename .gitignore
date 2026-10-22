@@ -1,0 +1,25 @@
+# Visual Studio / .NET
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.rsuser
+*.userprefs
+*.DotSettings.user
+.idea/
+*.pubxml.user
+
+# 发布输出与运行时（程序首次运行时自动下载）
+dist/
+runtime/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+.DS_Store

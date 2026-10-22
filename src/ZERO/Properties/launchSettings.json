@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "ZERO": {
+      "commandName": "Project"
+    },
+    "ZERO（测试：跳过 NuGet 与系统 Python）": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "NB_SKIP_NUGET": "1",
+        "NB_SKIP_SYSTEM": "1"
+      }
+    }
+  }
+}
