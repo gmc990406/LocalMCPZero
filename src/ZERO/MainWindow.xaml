@@ -67,7 +67,16 @@
                             <TextBlock x:Name="StatusSub" Text="选择访问模式后点击「启动」" FontSize="12.5"
                                        Foreground="{StaticResource TextSecondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
-                        <Button x:Name="BtnToggle" Grid.Column="2" Style="{StaticResource PrimaryButton}" MinWidth="110"
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BtnHistory" Style="{StaticResource SecondaryButton}" Padding="14,8" FontSize="13"
+                                VerticalAlignment="Center" Margin="0,0,10,0" Click="BtnHistory_Click"
+                                ToolTip="查看 AI 在这台电脑上的操作记录">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Width="13" Height="13" Margin="0,0,7,0" Data="{StaticResource IcoHistory}"/>
+                                <TextBlock Text="历史记录"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BtnToggle" Style="{StaticResource PrimaryButton}" MinWidth="110"
                                 VerticalAlignment="Center" Click="BtnToggle_Click">
                             <StackPanel Orientation="Horizontal">
                                 <Path x:Name="ToggleIcon" Width="11" Height="11" Stretch="Uniform" Fill="White" Stroke="White" StrokeThickness="1.5"
@@ -76,6 +85,7 @@
                                 <TextBlock x:Name="ToggleText" Text="启动" Foreground="White" FontWeight="SemiBold"/>
                             </StackPanel>
                         </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -234,7 +244,7 @@
                                         <TextBlock Text="MCP 服务" Foreground="#E5E5EA" FontSize="12" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="ServerState" Text="未运行" Foreground="#8E8E93" FontSize="11.5" Margin="8,0,0,0"/>
                                     </StackPanel>
-                                    <Button HorizontalAlignment="Right" Style="{StaticResource IconButton}" Foreground="#8E8E93" ToolTip="清空" Click="ClearServerLog_Click">
+                                    <Button HorizontalAlignment="Right" Style="{StaticResource IconButton}" Foreground="#8E8E93" x:Name="ClearServerBtn" ToolTip="清空" Click="ClearServerLog_Click">
                                         <Path Style="{StaticResource IconPath}" Width="13" Height="13" Data="{StaticResource IcoTrash}"/>
                                     </Button>
                                 </Grid>
@@ -256,7 +266,7 @@
                                         <TextBlock Text="Cloudflare 隧道" Foreground="#E5E5EA" FontSize="12" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="TunnelState" Text="未运行" Foreground="#8E8E93" FontSize="11.5" Margin="8,0,0,0"/>
                                     </StackPanel>
-                                    <Button HorizontalAlignment="Right" Style="{StaticResource IconButton}" Foreground="#8E8E93" ToolTip="清空" Click="ClearTunnelLog_Click">
+                                    <Button HorizontalAlignment="Right" Style="{StaticResource IconButton}" Foreground="#8E8E93" x:Name="ClearTunnelBtn" ToolTip="清空" Click="ClearTunnelLog_Click">
                                         <Path Style="{StaticResource IconPath}" Width="13" Height="13" Data="{StaticResource IcoTrash}"/>
                                     </Button>
                                 </Grid>

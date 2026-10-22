@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
@@ -57,7 +58,7 @@ public partial class MainWindow : Window
             Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
             if (WindowState == WindowState.Minimized) HideToTray();
         };
-        Loaded += async (_, _) => { InitTray(); StartSnapshotIfRequested(); await RunSetupAsync(); };
+        Loaded += async (_, _) => { InitTray(); StartMaintenanceTimers(); StartSnapshotIfRequested(); await RunSetupAsync(); };
     }
 
     // 调试用：ZERO.exe --snapshot=路径  每 2 秒把窗口画面保存为图片（锁屏时也可用）
@@ -310,7 +311,7 @@ public partial class MainWindow : Window
 
         _publicUrl = null; _serverReady = false;
         RefreshConnectionFields();
-        ServerLog.Clear(); TunnelLog.Clear();
+        ClearLog(ServerLog); ClearLog(TunnelLog);
         SetState(State.Starting, "正在启动 MCP 服务…");
 
         _port = FindFreePort(_settings.Port);
@@ -324,6 +325,8 @@ public partial class MainWindow : Window
             ["MCP_PORT"] = _port.ToString(),
             ["MCP_JOBDIR"] = jobDir,
             ["MCP_PROTECT"] = AppSettings.DataDir,
+            ["MCP_HISTORY_DB"] = _settings.HistoryEnabled ? HistoryStore.DbPath : "",
+            ["MCP_HISTORY_SHARE"] = _settings.HistoryEnabled && _settings.HistoryShare ? "1" : "0",
             ["PYTHONIOENCODING"] = "utf-8",
             ["PYTHONUTF8"] = "1",
             ["PYTHONUNBUFFERED"] = "1",
@@ -421,20 +424,94 @@ public partial class MainWindow : Window
 
     string MaskToken(string s) => s.Replace(_settings.Token, "••••••");
 
-    static void AppendLog(TextBox box, string line)
+    // 日志面板：每行记下时间，定时清理超过 LogKeepMinutes 分钟的内容；最多保留 MaxLogLines 行
+    const int MaxLogLines = 1000;
+    readonly Dictionary<TextBox, List<(DateTime Time, string Line)>> _logLines = new();
+
+    void AppendLog(TextBox box, string line)
     {
-        bool atBottom = box.VerticalOffset + box.ViewportHeight >= box.ExtentHeight - 4;
-        if (box.LineCount > 2000)
+        if (!_logLines.TryGetValue(box, out var lines)) _logLines[box] = lines = new();
+        lines.Add((DateTime.Now, line));
+        if (lines.Count > MaxLogLines)
         {
-            var t = box.Text;
-            box.Text = t[(t.Length / 2)..];
+            lines.RemoveRange(0, lines.Count - MaxLogLines * 4 / 5);
+            RebuildLog(box, lines);
+            return;
         }
+        bool atBottom = box.VerticalOffset + box.ViewportHeight >= box.ExtentHeight - 4;
         box.AppendText((box.Text.Length > 0 ? Environment.NewLine : "") + line);
         if (atBottom) box.ScrollToEnd();
     }
 
-    void ClearServerLog_Click(object s, RoutedEventArgs e) => ServerLog.Clear();
-    void ClearTunnelLog_Click(object s, RoutedEventArgs e) => TunnelLog.Clear();
+    static void RebuildLog(TextBox box, List<(DateTime Time, string Line)> lines)
+    {
+        bool atBottom = box.VerticalOffset + box.ViewportHeight >= box.ExtentHeight - 4;
+        box.Text = string.Join(Environment.NewLine, lines.Select(l => l.Line));
+        if (atBottom) box.ScrollToEnd();
+    }
+
+    void ClearLog(TextBox box)
+    {
+        box.Clear();
+        if (_logLines.TryGetValue(box, out var lines)) lines.Clear();
+    }
+
+    void PruneLogs()
+    {
+        var cutoff = DateTime.Now.AddMinutes(-Math.Max(1, _settings.LogKeepMinutes));
+        foreach (var (box, lines) in _logLines)
+        {
+            int n = lines.FindIndex(l => l.Time >= cutoff);
+            if (n == 0 || lines.Count == 0) continue;
+            if (n < 0) n = lines.Count;
+            lines.RemoveRange(0, n);
+            RebuildLog(box, lines);
+        }
+    }
+
+    void ClearServerLog_Click(object s, RoutedEventArgs e) => ClearLog(ServerLog);
+    void ClearTunnelLog_Click(object s, RoutedEventArgs e) => ClearLog(TunnelLog);
+
+    // ====================== 历史记录 ======================
+    HistoryWindow? _history;
+
+    void BtnHistory_Click(object s, RoutedEventArgs e)
+    {
+        if (_history == null)
+        {
+            _history = new HistoryWindow(_settings);
+            _history.Closed += (_, _) => _history = null;
+            _history.Show();
+        }
+        else
+        {
+            if (_history.WindowState == WindowState.Minimized) _history.WindowState = WindowState.Normal;
+            _history.Activate();
+        }
+    }
+
+    void CleanupHistory()
+    {
+        try
+        {
+            int n = HistoryStore.Cleanup(_settings.HistoryDays);
+            if (n > 0) AppLog.Write("历史", $"已自动清理 {n} 个超过 {_settings.HistoryDays} 天的对话");
+        }
+        catch (Exception ex) { AppLog.Error("历史", ex); }
+    }
+
+    void StartMaintenanceTimers()
+    {
+        var tip = $"清空（超过 {_settings.LogKeepMinutes} 分钟的日志会自动清理）";
+        ClearServerBtn.ToolTip = tip; ClearTunnelBtn.ToolTip = tip;
+        CleanupHistory();
+        var logTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        logTimer.Tick += (_, _) => PruneLogs();
+        logTimer.Start();
+        var histTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
+        histTimer.Tick += (_, _) => CleanupHistory();
+        histTimer.Start();
+    }
 
     // ====================== 状态与界面 ======================
     void SetState(State st, string? sub = null)

@@ -25,6 +25,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 历史记录数据库（与 MCP 服务共用 SQLite 文件） -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- MCP 服务脚本以嵌入资源形式打包进 exe，运行时释放到 runtime\server.py -->
     <EmbeddedResource Include="Resources\server.py" LogicalName="server.py" />
     <Resource Include="Resources\app.ico" />

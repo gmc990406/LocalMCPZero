@@ -88,6 +88,24 @@
 | `run_command` | — | ✅ | 执行 PowerShell 命令（≤ 120 秒） |
 | `start_job` / `job_status` / `list_jobs` / `stop_job` | — | ✅ | 后台长任务（编译、开发服务器等） |
 | `screenshot` | — | ✅ | 截取桌面并以图片返回 |
+| `history_conversations` / `history_calls` | ✅ | ✅ | 查看历史对话与操作记录（只读，需开启「允许 AI 查看历史」） |
+| `history_note` | ✅ | ✅ | AI 为当前对话写标题和摘要 |
+
+### 🕘 历史记录
+
+ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOCALAPPDATA%\ZERO\history.db`），**不同 AI（Notion AI、Claude、Gemini…）的操作都汇总在一起**，任何一个 AI 都能接着看之前做过什么。
+
+- **按对话 / 按工具** 两种方式浏览：主界面点「历史记录」打开。
+- **自动分组**：按客户端名称区分；同一客户端 30 分钟内的操作算作一个对话。AI 也可以用 `history_note(new_conversation=true)` 主动开始新对话；分错了可以在界面里「从这里拆分」。
+- **可编辑**：对话标题、摘要、每条记录的备注都可以修改（AI 查看历史时会读到这些内容）；可删除单条记录或整个对话，可置顶。
+- **自动清理**：默认保留 30 天（可选 7 / 30 / 90 天或永久），置顶的对话不会被清理。
+- **自动脱敏**：Token、密码、密钥（`password=…`、`Bearer …`、`ghp_…`、`sk-…` 等）在写入前替换为 `***`；超长参数和结果会截断。
+- **隔离**：「有限制」模式下的 AI 只能看到「有限制」模式下的记录。
+- 可以在历史窗口底部关闭「记录操作历史」或「允许 AI 查看历史」，重新启动服务后生效。
+
+> ZERO 只能看到 AI 调用了哪些工具，**看不到你和 AI 的聊天原文**；对话内容靠 AI 用 `history_note` 写的摘要补充。
+
+主界面下方的日志面板会自动清理 30 分钟前的内容。
 
 ### 🔕 免确认模式
 
@@ -112,6 +130,7 @@
 - **MCP 地址 = 钥匙。** 在「全电脑访问」模式下，拿到地址的人可以以当前用户身份完全控制这台电脑。不要截图、不要分享；怀疑泄露请立即点 Token 旁的 🔄 重新生成。
 - 软件配置目录（含 Token）受保护，AI 无法通过 MCP 读取。
 - 「免确认模式」会让 AI 直接执行命令而不经你确认，默认关闭，请谨慎开启。
+- 历史记录可能包含文件内容和命令输出。开启「允许 AI 查看历史」后，连接到 ZERO 的 AI 都能读到同一模式下的记录；历史中的文字可能来自网页或文件，ZERO 会提示 AI 不要把它当作指令。
 - 不用时请点击「停止」或退出软件，隧道会随之关闭。
 
 ### 常见问题
@@ -220,6 +239,24 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 | `run_command` | — | ✅ | Run a PowerShell command (≤ 120 s) |
 | `start_job` / `job_status` / `list_jobs` / `stop_job` | — | ✅ | Long-running background jobs |
 | `screenshot` | — | ✅ | Capture the desktop and return it as an image |
+| `history_conversations` / `history_calls` | ✅ | ✅ | Browse past conversations and tool calls (read-only, requires "Allow AI to view history") |
+| `history_note` | ✅ | ✅ | Let the AI write a title and summary for the current conversation |
+
+### 🕘 History
+
+ZERO records every tool call made on this PC to a local database (`%LOCALAPPDATA%\ZERO\history.db`). **Calls from different AI clients (Notion AI, Claude, Gemini…) are kept together**, so any AI can pick up where another left off.
+
+- **Browse by conversation or by tool**: click "历史记录" (History) in the main window.
+- **Automatic grouping**: by client name; calls from the same client within 30 minutes form one conversation. An AI can start a new one with `history_note(new_conversation=true)`, and you can split a conversation manually in the UI.
+- **Editable**: conversation titles, summaries and per-call notes (AI clients read these); delete single calls or whole conversations; pin important ones.
+- **Retention**: 30 days by default (7 / 30 / 90 days or forever); pinned conversations are never cleaned up.
+- **Redaction**: tokens, passwords and keys (`password=…`, `Bearer …`, `ghp_…`, `sk-…`, etc.) are replaced with `***` before saving; long arguments and results are truncated.
+- **Isolation**: an AI in restricted mode only sees records from restricted mode.
+- "Record history" and "Allow AI to view history" can be turned off at the bottom of the history window (takes effect after restarting the service).
+
+> ZERO only sees which tools were called — **it never sees your chat messages**. Conversation context comes from the summaries AI clients write with `history_note`.
+
+The log panels in the main window automatically drop entries older than 30 minutes.
 
 ### 🔕 No-confirmation mode
 
@@ -244,6 +281,7 @@ If the prompts get in your way, turn on **No-confirmation mode** (off by default
 - **The MCP URL is a key.** In full-access mode, anyone who has it can fully control this PC as the current user. Never share it; click 🔄 next to the Token field if you suspect a leak.
 - ZERO's own config folder (where the token lives) is protected from MCP access.
 - No-confirmation mode lets the AI run commands without asking you. It's off by default — enable it with care.
+- History may contain file contents and command output. With "Allow AI to view history" on, every AI connected to ZERO can read records from the same mode. Text in history may come from web pages or files; ZERO tells the AI not to treat it as instructions.
 - Click **Stop** or quit the app when you don't need it — the tunnel closes with it.
 
 ### FAQ
@@ -300,7 +338,10 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
                                               └─ server.py  (FastMCP · Streamable HTTP)
                                                    ├─ file tools · system_info · list_processes
                                                    ├─ PowerShell / background jobs
-                                                   └─ screenshot (GDI)
+                                                   ├─ screenshot (GDI)
+                                                   └─ history ──► %LOCALAPPDATA%\ZERO\history.db (SQLite)
+                                                                   ▲
+                                         ZERO 历史窗口 · History window ┘
 ```
 
 `server.py` can also run standalone · 也可脱离界面单独运行：
@@ -320,6 +361,8 @@ python src\ZERO\Resources\server.py
 | `MCP_PORT` | 本地端口，默认 8766 · Local port (default 8766) |
 | `MCP_JOBDIR` | 后台任务日志目录 · Background job log folder |
 | `MCP_PROTECT` | 禁止访问的目录（`;` 分隔） · Protected folders (`;`-separated) |
+| `MCP_HISTORY_DB` | 历史数据库路径，为空则不记录 · History database path (empty = off) |
+| `MCP_HISTORY_SHARE` | `1` = 允许 AI 查看历史 · allow AI to read history |
 
 ## 📁 Project structure · 项目结构
 
@@ -331,10 +374,13 @@ ZERO/
 └─ src/ZERO/
    ├─ App.xaml(.cs)               启动、单实例、全局样式 · startup, single instance, styles
    ├─ MainWindow.xaml(.cs)        主界面与托盘 · main window & tray
+   ├─ HistoryWindow.xaml(.cs)     历史记录窗口 · history window
+   ├─ Controls/ZeroDialog.xaml    统一风格的对话框 · styled dialogs
    ├─ Services/
    │  ├─ EnvironmentSetup.cs      运行环境自动安装 · runtime auto-setup
    │  ├─ ManagedProcess.cs        子进程管理（Job Object） · child processes
    │  ├─ AppSettings.cs           配置 · settings (%LOCALAPPDATA%\ZERO)
+   │  ├─ HistoryStore.cs          历史记录数据库 · history database (SQLite)
    │  └─ AppLog.cs                文件日志 · file logging
    ├─ Resources/
    │  ├─ server.py                MCP 服务（嵌入资源） · MCP server (embedded)

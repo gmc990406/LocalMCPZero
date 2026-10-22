@@ -36,6 +36,10 @@
         <Geometry x:Key="IcoCheck">M5,12.5 L10,17.5 L19,7</Geometry>
         <Geometry x:Key="IcoClose">M6,6 L18,18 M18,6 L6,18</Geometry>
         <Geometry x:Key="IcoCircle">M5,12 A7,7 0 1 0 19,12 A7,7 0 1 0 5,12 Z</Geometry>
+        <Geometry x:Key="IcoHistory">M3.5,12 A8.5,8.5 0 1 0 6,6 M3,3.5 V7.5 H7 M12,7.5 V12 L15,14</Geometry>
+        <Geometry x:Key="IcoPin">M9,3 H15 M10,3 V9 L6.5,13.5 H17.5 L14,9 V3 M12,13.5 V21</Geometry>
+        <Geometry x:Key="IcoSplit">M4,12 H20 M8,7 L4,12 L8,17 M16,7 L20,12 L16,17</Geometry>
+        <Geometry x:Key="IcoSearch">M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 Z M15.3,15.3 L20,20</Geometry>
         <Geometry x:Key="IcoRing">M12,4 A8,8 0 1 1 4,12</Geometry>
 
         <Style x:Key="IconPath" TargetType="Path">
@@ -189,6 +193,112 @@
                             <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 普通开关（开启为绿色），用于没有风险的选项 -->
+        <Style x:Key="SwitchSafe" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Width="34" Height="20" Background="Transparent">
+                            <Border x:Name="track" CornerRadius="10" Background="#D1D1D6"/>
+                            <Ellipse x:Name="knob" Width="16" Height="16" Fill="White" HorizontalAlignment="Left" Margin="2,0,0,0"
+                                     Effect="{StaticResource KnobShadow}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="track" Property="Background" Value="{StaticResource Green}"/>
+                                <Setter TargetName="knob" Property="Margin" Value="16,0,0,0"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 可编辑输入框（单行/多行），获得焦点时显示蓝色描边 -->
+        <Style x:Key="EditBox" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
+            <Setter Property="SelectionBrush" Value="#3A82F7"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Background" Value="{StaticResource FieldBg}"/>
+            <Setter Property="VerticalContentAlignment" Value="Top"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="7" BorderThickness="1" BorderBrush="Transparent"
+                                Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#D1D1D6"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                <Setter TargetName="b" Property="Background" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 只读代码/结果显示框（等宽字体，可选择复制） -->
+        <Style x:Key="CodeBox" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="SelectionBrush" Value="#3A82F7"/>
+            <Setter Property="CaretBrush" Value="Transparent"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{StaticResource FieldBg}" CornerRadius="7" Padding="10,7,4,7">
+                            <ScrollViewer x:Name="PART_ContentHost" HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 列表：无边框、透明背景；列表项圆角，悬停浅灰，选中浅蓝 -->
+        <Style x:Key="PlainList" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="False"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Cursor" Value="Hand"/>
+                        <Setter Property="Margin" Value="0,0,4,2"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="b" Background="Transparent" CornerRadius="8" Padding="12,9">
+                                        <ContentPresenter/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#F2F2F5"/></Trigger>
+                                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="b" Property="Background" Value="#E6F0FF"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
                 </Setter.Value>
             </Setter>
         </Style>

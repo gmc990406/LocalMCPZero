@@ -24,6 +24,26 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        // 调试用：ZERO.exe --snapshot-history=路径.png  打开历史窗口并截图后退出（可用环境变量 ZERO_HISTORY_DB 指定测试数据库）
+        var histArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-history="));
+        if (histArg != null)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            var path = histArg["--snapshot-history=".Length..].Trim('"');
+            var w = new HistoryWindow(Services.AppSettings.Load()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
+            w.Show();
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            int step = 0;
+            t.Tick += (_, _) =>
+            {
+                if (step++ == 0) { w.SelectFirstForPreview(path.Contains("-tool") ? 0 : 2, path.Contains("-tool")); return; }
+                t.Stop();
+                w.SaveSnapshot(path);
+                Shutdown();
+            };
+            t.Start();
+            return;
+        }
         _mutex = new Mutex(true, "ZERO_SingleInstance_8f3a", out bool isNew);
         if (!isNew)
         {

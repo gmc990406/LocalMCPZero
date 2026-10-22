@@ -88,8 +88,10 @@ public partial class ZeroDialog : Window
             d.WindowStartupLocation = WindowStartupLocation.Manual;
             d.Left = p.X; d.Top = p.Y;
             d.Width = owner.ActualWidth; d.Height = owner.ActualHeight;
-            d.Dim.Margin = owner is MainWindow mw ? mw.Shell.Margin : new Thickness(0);
-            d.Dim.CornerRadius = owner is MainWindow ? new CornerRadius(12) : new CornerRadius(0);
+            // ZERO 的窗口都有名为 Shell 的圆角外框，遮罩与之对齐
+            var shell = owner.FindName("Shell") as System.Windows.Controls.Border;
+            d.Dim.Margin = shell?.Margin ?? new Thickness(0);
+            d.Dim.CornerRadius = shell?.CornerRadius ?? new CornerRadius(0);
         }
         else
         {

@@ -14,6 +14,10 @@ public sealed class AppSettings
     public int Port { get; set; } = 8766;
     public bool Trust { get; set; }                            // 免确认模式（仅全电脑访问有效，默认关闭）
     public bool TrayHintShown { get; set; }
+    public bool HistoryEnabled { get; set; } = true;          // 记录 AI 的操作历史
+    public bool HistoryShare { get; set; } = true;            // 允许 AI 查看历史（只能看到同一访问模式的记录）
+    public int HistoryDays { get; set; } = 30;                // 历史保留天数，0 = 永久
+    public int LogKeepMinutes { get; set; } = 30;             // 主界面日志面板自动清理：只保留最近 N 分钟
 
     public static string DataDir { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZERO");
