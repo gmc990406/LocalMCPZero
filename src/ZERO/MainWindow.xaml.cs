@@ -327,6 +327,10 @@ public partial class MainWindow : Window
             ["MCP_PROTECT"] = AppSettings.DataDir,
             ["MCP_HISTORY_DB"] = _settings.HistoryEnabled ? HistoryStore.DbPath : "",
             ["MCP_HISTORY_SHARE"] = _settings.HistoryEnabled && _settings.HistoryShare ? "1" : "0",
+            ["MCP_MEMORY_DB"] = _settings.MemoryEnabled ? MemoryStore.DbPath : "",
+            ["MCP_MEMORY_WRITE"] = _settings.MemoryEnabled && _settings.MemoryWrite ? "1" : "0",
+            // 诊断用：记录最近 300 个请求的请求头和 _meta（不含 Token、Cookie、请求内容），用于判断 AI 客户端提供了哪些会话标识
+            ["MCP_REQLOG"] = System.IO.Path.Combine(AppSettings.DataDir, "diagnostics", "requests.jsonl"),
             ["PYTHONIOENCODING"] = "utf-8",
             ["PYTHONUTF8"] = "1",
             ["PYTHONUNBUFFERED"] = "1",
@@ -487,6 +491,23 @@ public partial class MainWindow : Window
         {
             if (_history.WindowState == WindowState.Minimized) _history.WindowState = WindowState.Normal;
             _history.Activate();
+        }
+    }
+
+    MemoryWindow? _memory;
+
+    void BtnMemory_Click(object s, RoutedEventArgs e)
+    {
+        if (_memory == null)
+        {
+            _memory = new MemoryWindow(_settings);
+            _memory.Closed += (_, _) => _memory = null;
+            _memory.Show();
+        }
+        else
+        {
+            if (_memory.WindowState == WindowState.Minimized) _memory.WindowState = WindowState.Normal;
+            _memory.Activate();
         }
     }
 

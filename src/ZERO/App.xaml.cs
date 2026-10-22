@@ -44,6 +44,26 @@ public partial class App : Application
             t.Start();
             return;
         }
+        // 调试用：ZERO.exe --snapshot-memory=路径.png（可用环境变量 ZERO_MEMORY_DB 指定测试数据库）
+        var memArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-memory="));
+        if (memArg != null)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            var path = memArg["--snapshot-memory=".Length..].Trim('"');
+            var w = new MemoryWindow(Services.AppSettings.Load()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
+            w.Show();
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            int step = 0;
+            t.Tick += (_, _) =>
+            {
+                if (step++ == 0) { w.SelectFirstForPreview(); return; }
+                t.Stop();
+                w.SaveSnapshot(path);
+                Shutdown();
+            };
+            t.Start();
+            return;
+        }
         _mutex = new Mutex(true, "ZERO_SingleInstance_8f3a", out bool isNew);
         if (!isNew)
         {

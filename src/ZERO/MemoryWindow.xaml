@@ -1,0 +1,214 @@
+<Window x:Class="ZERO.MemoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ZERO 记忆库" Width="1000" Height="760" MinWidth="860" MinHeight="600"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="CanResize" WindowStartupLocation="CenterScreen"
+        FontFamily="{StaticResource UiFont}" Icon="Resources/app.ico"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="46" ResizeBorderThickness="10" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolVis"/>
+
+        <DataTemplate x:Key="MemTemplate">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding FirstLine}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    <Path Grid.Column="1" Style="{StaticResource IconPath}" Width="12" Height="12" Margin="8,0,0,0"
+                          Stroke="{StaticResource Accent}" Data="{StaticResource IcoPin}"
+                          Visibility="{Binding Pinned, Converter={StaticResource BoolVis}}"/>
+                </Grid>
+                <TextBlock Text="{Binding Tags}" FontSize="11.5" Foreground="{StaticResource Accent}" Margin="0,3,0,0"
+                           TextTrimming="CharacterEllipsis" Visibility="{Binding HasTags, Converter={StaticResource BoolVis}}"/>
+                <TextBlock Text="{Binding Meta}" FontSize="11.5" Foreground="{StaticResource TextSecondary}" Margin="0,3,0,0"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Border x:Name="Shell" Margin="12" CornerRadius="12" Background="{StaticResource WindowBg}"
+            BorderBrush="#33000000" BorderThickness="0.8">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="24" ShadowDepth="4" Direction="270" Opacity="0.28" Color="#000000"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="46"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- ========== 标题栏 ========== -->
+            <Border Grid.Row="0" CornerRadius="12,12,0,0" Background="#EFEFF2" BorderBrush="#E0E0E5" BorderThickness="0,0,0,1">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0"
+                                WindowChrome.IsHitTestVisibleInChrome="True" Background="Transparent">
+                        <Button Style="{StaticResource TrafficLight}" Background="#FF5F57" Click="BtnClose_Click"/>
+                        <Button Style="{StaticResource TrafficLight}" Background="#FEBC2E" Click="BtnMin_Click"/>
+                        <Button Style="{StaticResource TrafficLight}" Background="#28C840" Click="BtnMax_Click"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Image Source="Resources/app.ico" Width="16" Height="16" Margin="0,0,8,0"/>
+                        <TextBlock Text="记忆库" FontSize="13" FontWeight="SemiBold" Foreground="#3A3A3C"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="22,16,22,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- ========== 工具栏 ========== -->
+                <Grid Grid.Row="0" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Style="{StaticResource PrimaryButton}" Padding="14,7" Click="New_Click">
+                        <TextBlock Text="＋ 新建记忆" Foreground="White" FontWeight="SemiBold"/>
+                    </Button>
+                    <Grid Grid.Column="1" Margin="14,0,0,0" HorizontalAlignment="Left" Width="460">
+                        <TextBox x:Name="SearchBox" Style="{StaticResource EditBox}" Padding="32,7,10,7" TextChanged="Search_Changed"/>
+                        <Path Style="{StaticResource IconPath}" Stroke="{StaticResource TextTertiary}" Width="13" Height="13"
+                              HorizontalAlignment="Left" Margin="12,0,0,0" Data="{StaticResource IcoSearch}" IsHitTestVisible="False"/>
+                        <TextBlock x:Name="SearchHint" Text="搜索记忆内容、标签、来源…" FontSize="12.5" Foreground="{StaticResource TextTertiary}"
+                                   VerticalAlignment="Center" Margin="34,0,0,0" IsHitTestVisible="False"/>
+                    </Grid>
+                    <Button Grid.Column="2" Style="{StaticResource IconButton}" ToolTip="刷新" Click="Refresh_Click">
+                        <Path Style="{StaticResource IconPath}" Data="{StaticResource IcoRefresh}"/>
+                    </Button>
+                </Grid>
+
+                <!-- 标签筛选 -->
+                <WrapPanel x:Name="TagBar" Grid.Row="1" Margin="0,0,0,12"/>
+
+                <!-- ========== 主体 ========== -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="330"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Style="{StaticResource Card}" Padding="8,12,4,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="ListTitle" Style="{StaticResource Caption}" Text="记忆" Margin="12,0,0,8"/>
+                            <ListBox x:Name="MainList" Grid.Row="1" Style="{StaticResource PlainList}" SelectionChanged="MainList_SelectionChanged"
+                                     ItemTemplate="{StaticResource MemTemplate}"/>
+                            <TextBlock x:Name="ListEmpty" Grid.Row="1" TextAlignment="Center" FontSize="12.5" LineHeight="20"
+                                       Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="Collapsed"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource Card}" Padding="20,16,16,16">
+                        <Grid>
+                            <Grid x:Name="Detail" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Grid Grid.Row="0" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock x:Name="DetailTitle" FontSize="16" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="SavedTip" Text="已保存" FontSize="11.5" Foreground="{StaticResource Green}"
+                                                       VerticalAlignment="Center" Margin="10,2,0,0" Opacity="0"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="MetaText" FontSize="11.5" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <StackPanel x:Name="MemActions" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="10,0,0,0">
+                                        <Button x:Name="BtnPin" Style="{StaticResource IconButton}" Click="Pin_Click">
+                                            <Path x:Name="PinIcon" Style="{StaticResource IconPath}" Data="{StaticResource IcoPin}"/>
+                                        </Button>
+                                        <Button Style="{StaticResource IconButton}" ToolTip="删除记忆" Click="Delete_Click">
+                                            <Path Style="{StaticResource IconPath}" Data="{StaticResource IcoTrash}"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid Grid.Row="1">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Style="{StaticResource Caption}" Text="内容（AI 搜索记忆时会读到；每条只写一件事）" Margin="2,0,0,6"/>
+                                    <TextBox x:Name="ContentEdit" Grid.Row="1" Style="{StaticResource EditBox}" AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" MaxLength="2000"
+                                             LostKeyboardFocus="Edit_LostFocus"/>
+                                    <TextBlock x:Name="ContentHint" Grid.Row="1" Text="例如：用户希望回答和代码注释都使用中文"
+                                               FontSize="12.5" Foreground="{StaticResource TextTertiary}" Margin="12,9,0,0" IsHitTestVisible="False"/>
+                                </Grid>
+
+                                <StackPanel Grid.Row="2" Margin="0,14,0,0">
+                                    <TextBlock Style="{StaticResource Caption}" Text="标签（用逗号分隔，方便筛选和搜索）" Margin="2,0,0,6"/>
+                                    <TextBox x:Name="TagsEdit" Style="{StaticResource EditBox}" MaxLength="300" LostKeyboardFocus="Edit_LostFocus"
+                                             KeyDown="TagsEdit_KeyDown"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="3" Margin="0,14,0,0" Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Caption}" Text="哪些模式下的 AI 可以看到" VerticalAlignment="Center" Margin="2,0,12,0"/>
+                                    <Border Background="#E9E9EE" CornerRadius="8">
+                                        <StackPanel x:Name="ScopeGroup" Orientation="Horizontal">
+                                            <RadioButton Style="{StaticResource Segment}" GroupName="Scope" Content="所有模式" Tag="all" Click="Scope_Click"/>
+                                            <RadioButton Style="{StaticResource Segment}" GroupName="Scope" Content="仅全电脑访问" Tag="full" Click="Scope_Click"/>
+                                            <RadioButton Style="{StaticResource Segment}" GroupName="Scope" Content="仅有限制模式" Tag="restricted" Click="Scope_Click"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock x:Name="DetailEmpty" Text="选择左侧的一条记忆查看和编辑&#x0a;或点击「新建记忆」手动添加" TextAlignment="Center" FontSize="12.5"
+                                       LineHeight="20" Foreground="{StaticResource TextTertiary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- ========== 底部设置 ========== -->
+                <Grid Grid.Row="3" Margin="4,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <CheckBox x:Name="EnableSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
+                        <TextBlock Text="启用记忆库" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"
+                                   ToolTip="关闭后 AI 看不到也无法使用记忆库（已有记忆会保留）"/>
+                        <CheckBox x:Name="WriteSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
+                        <TextBlock Text="允许 AI 保存和修改记忆" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"
+                                   ToolTip="关闭后 AI 只能搜索记忆，只有你能添加和修改"/>
+                        <TextBlock Text="置顶的记忆会在 AI 连接时直接告诉它" FontSize="11.5" Foreground="{StaticResource TextTertiary}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="SettingHint" Text="开关修改后，重新启动服务生效" FontSize="11.5" Foreground="{StaticResource TextTertiary}"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" Visibility="Collapsed"/>
+                        <Button x:Name="BtnDataDir" Style="{StaticResource SecondaryButton}" Content="数据文件夹" Click="DataDir_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

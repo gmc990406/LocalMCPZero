@@ -17,7 +17,9 @@ public sealed class AppSettings
     public bool HistoryEnabled { get; set; } = true;          // 记录 AI 的操作历史
     public bool HistoryShare { get; set; } = true;            // 允许 AI 查看历史（只能看到同一访问模式的记录）
     public int HistoryDays { get; set; } = 30;                // 历史保留天数，0 = 永久
-    public int LogKeepMinutes { get; set; } = 30;             // 主界面日志面板自动清理：只保留最近 N 分钟
+    public int LogKeepMinutes { get; set; } = 30;
+    public bool MemoryEnabled { get; set; } = true;           // 记忆库：AI 可以搜索
+    public bool MemoryWrite { get; set; } = true;             // 允许 AI 保存/修改/删除记忆             // 主界面日志面板自动清理：只保留最近 N 分钟
 
     public static string DataDir { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZERO");

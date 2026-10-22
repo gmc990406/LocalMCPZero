@@ -39,6 +39,7 @@
         <Geometry x:Key="IcoHistory">M3.5,12 A8.5,8.5 0 1 0 6,6 M3,3.5 V7.5 H7 M12,7.5 V12 L15,14</Geometry>
         <Geometry x:Key="IcoPin">M9,3 H15 M10,3 V9 L6.5,13.5 H17.5 L14,9 V3 M12,13.5 V21</Geometry>
         <Geometry x:Key="IcoSplit">M4,12 H20 M8,7 L4,12 L8,17 M16,7 L20,12 L16,17</Geometry>
+        <Geometry x:Key="IcoMemory">M12,3 C8,3 5,6 5,9.5 C5,12 6.3,13.6 8,14.6 V18 H16 V14.6 C17.7,13.6 19,12 19,9.5 C19,6 16,3 12,3 Z M9.5,21 H14.5 M10,10 H14 M12,8 V12</Geometry>
         <Geometry x:Key="IcoSearch">M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 Z M15.3,15.3 L20,20</Geometry>
         <Geometry x:Key="IcoRing">M12,4 A8,8 0 1 1 4,12</Geometry>
 

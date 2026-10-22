@@ -90,6 +90,8 @@
 | `screenshot` | — | ✅ | 截取桌面并以图片返回 |
 | `history_conversations` / `history_calls` | ✅ | ✅ | 查看历史对话与操作记录（只读，需开启「允许 AI 查看历史」） |
 | `history_note` | ✅ | ✅ | AI 为当前对话写标题和摘要 |
+| `memory_search` | ✅ | ✅ | 搜索记忆库（需启用记忆库） |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改、删除记忆（需开启「允许 AI 保存和修改记忆」） |
 
 ### 🕘 历史记录
 
@@ -105,6 +107,16 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 - 可以在历史窗口底部关闭「记录操作历史」或「允许 AI 查看历史」，重新启动服务后生效。
 
 > ZERO 只能看到 AI 调用了哪些工具，**看不到你和 AI 的聊天原文**；对话内容靠 AI 用 `history_note` 写的摘要补充。
+
+### 🧠 记忆库
+
+跨 AI 共享的长期记忆（`%LOCALAPPDATA%\ZERO\memory.db`，不随历史记录清理）：用户偏好、项目位置与约定、之前得出的结论等。
+
+- AI 用 `memory_search` 搜索（开始任务前会先查），用 `memory_save` / `memory_update` / `memory_delete` 保存、修改、删除。
+- 主界面点「记忆库」查看和编辑：新建、修改内容和标签、按标签筛选、删除。
+- **置顶**的记忆会在 AI 连接时直接写进服务说明（无需搜索），且 AI 不能删除。
+- 每条记忆可设置可见范围：所有模式 / 仅全电脑访问 / 仅有限制模式（AI 保存时默认为当前模式）。
+- 底部开关：「启用记忆库」「允许 AI 保存和修改记忆」（关闭后 AI 只能搜索），重新启动服务后生效。保存时会自动去掉 Token、密码等敏感内容。
 
 主界面下方的日志面板会自动清理 30 分钟前的内容。
 
@@ -242,6 +254,8 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 | `screenshot` | — | ✅ | Capture the desktop and return it as an image |
 | `history_conversations` / `history_calls` | ✅ | ✅ | Browse past conversations and tool calls (read-only, requires "Allow AI to view history") |
 | `history_note` | ✅ | ✅ | Let the AI write a title and summary for the current conversation |
+| `memory_search` | ✅ | ✅ | Search the memory library (when memory is enabled) |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save, edit, delete memories (requires "Allow AI to save and edit") |
 
 ### 🕘 History
 
@@ -257,6 +271,16 @@ ZERO records every tool call made on this PC to a local database (`%LOCALAPPDATA
 - "Record history" and "Allow AI to view history" can be turned off at the bottom of the history window (takes effect after restarting the service).
 
 > ZERO only sees which tools were called — **it never sees your chat messages**. Conversation context comes from the summaries AI clients write with `history_note`.
+
+### 🧠 Memory
+
+Long-term memory shared by all AI clients (`%LOCALAPPDATA%\ZERO\memory.db`, never auto-cleaned): user preferences, project locations and conventions, earlier conclusions.
+
+- AIs use `memory_search` (before starting a task) and `memory_save` / `memory_update` / `memory_delete`.
+- Click "记忆库" (Memory) in the main window to browse, add, edit, tag-filter and delete memories.
+- **Pinned** memories are included in the server instructions on every connection (no search needed) and cannot be deleted by AI.
+- Each memory has a visibility scope: all modes / full access only / restricted only (AI-saved memories default to the current mode).
+- Switches: "Enable memory" and "Allow AI to save and edit" (search only when off); take effect after restarting the service. Tokens and passwords are scrubbed on save.
 
 The log panels in the main window automatically drop entries older than 30 minutes.
 
@@ -365,6 +389,9 @@ python src\ZERO\Resources\server.py
 | `MCP_PROTECT` | 禁止访问的目录（`;` 分隔） · Protected folders (`;`-separated) |
 | `MCP_HISTORY_DB` | 历史数据库路径，为空则不记录 · History database path (empty = off) |
 | `MCP_HISTORY_SHARE` | `1` = 允许 AI 查看历史 · allow AI to read history |
+| `MCP_MEMORY_DB` | 记忆库路径，为空则不启用 · memory database path (empty = off) |
+| `MCP_MEMORY_WRITE` | `1` = 允许 AI 写入记忆 · allow AI to save/edit memories |
+| `MCP_REQLOG` | 诊断：最近 300 个请求的请求头与 `_meta`（不含 Token/Cookie/正文）· diagnostics: headers and `_meta` of the last 300 requests |
 
 ## 📁 Project structure · 项目结构
 
@@ -377,12 +404,14 @@ ZERO/
    ├─ App.xaml(.cs)               启动、单实例、全局样式 · startup, single instance, styles
    ├─ MainWindow.xaml(.cs)        主界面与托盘 · main window & tray
    ├─ HistoryWindow.xaml(.cs)     历史记录窗口 · history window
+   ├─ MemoryWindow.xaml(.cs)      记忆库窗口 · memory window
    ├─ Controls/ZeroDialog.xaml    统一风格的对话框 · styled dialogs
    ├─ Services/
    │  ├─ EnvironmentSetup.cs      运行环境自动安装 · runtime auto-setup
    │  ├─ ManagedProcess.cs        子进程管理（Job Object） · child processes
    │  ├─ AppSettings.cs           配置 · settings (%LOCALAPPDATA%\ZERO)
    │  ├─ HistoryStore.cs          历史记录数据库 · history database (SQLite)
+   │  ├─ MemoryStore.cs           记忆库数据库 · memory database (SQLite)
    │  └─ AppLog.cs                文件日志 · file logging
    ├─ Resources/
    │  ├─ server.py                MCP 服务（嵌入资源） · MCP server (embedded)
