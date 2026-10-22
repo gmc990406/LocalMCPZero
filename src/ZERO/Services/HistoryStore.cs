@@ -26,7 +26,7 @@ public sealed class ConversationItem
     public bool Inferred => Kind is "activity" or "legacy";
     public string KindText => Kind switch
     {
-        "session" => "MCP 会话", "activity" => "按时间推断", "explicit" => "AI 新建", "manual" => "手动拆分", _ => "旧版分组（推断）",
+        "chat" => "按聊天", "session" => "MCP 会话", "activity" => "按时间推断", "explicit" => "AI 新建", "manual" => "手动拆分", _ => "旧版分组（推断）",
     };
     public string Meta => $"{Client} · {HistoryStore.When(Updated)} · {(Calls > 0 ? $"{Calls} 次操作" : "无操作")}{(Inferred ? " · 推断" : "")}";
     public string ModeText => Mode == "full" ? "全电脑访问" : "有限制";

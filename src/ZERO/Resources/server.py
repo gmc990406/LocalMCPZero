@@ -72,6 +72,7 @@ NOTE = RO if TRUST else ToolAnnotations(readOnlyHint=False, destructiveHint=Fals
 
 # ---------------- 历史记录（按 MCP 会话 / 按工具存储在本机 SQLite） ----------------
 # 分组规则（只使用真实存在的标识，不编造聊天 ID）：
+#   0. 客户端在请求中提供聊天标识（如 ChatGPT 的 x-openai-session）→ 同一个聊天归为一组（kind=chat），最准确
 #   1. 客户端支持 MCP 会话（回传 Mcp-Session-Id）→ 同一会话的操作归为一组（kind=session）
 #   2. 不支持 → 按「同一客户端 + 30 分钟内」推断分组（kind=activity，界面标注“推断”）
 #   3. AI 可用 history_note(new_conversation=True) 新开一组（kind=explicit），
@@ -85,7 +86,7 @@ SID_PREFIX = "zs-"          # ZERO 自己签发的会话标识前缀
 REQ_INFO = contextvars.ContextVar("REQ_INFO", default={})
 CLIENT_NAMES: dict = {}     # User-Agent -> 客户端名称（来自 initialize 的 clientInfo）
 SID_NAMES: dict = {}        # 会话标识 -> 客户端名称
-KIND_TEXT = {"session": "MCP 会话", "activity": "按时间推断", "explicit": "AI 新建", "manual": "手动拆分", "legacy": "旧版分组（推断）"}
+KIND_TEXT = {"chat": "按聊天", "session": "MCP 会话", "activity": "按时间推断", "explicit": "AI 新建", "manual": "手动拆分", "legacy": "旧版分组（推断）"}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,22 +202,36 @@ def _client() -> tuple:
     return name, f"{MODE}|{ua}", ua, sid
 
 
+def _upstream() -> str:
+    """AI 客户端提供的聊天标识（不是 ZERO 生成的）。目前支持 ChatGPT：请求头 x-openai-session 或 _meta["openai/session"]"""
+    info = REQ_INFO.get()
+    return info.get("up", "") if isinstance(info, dict) else ""
+
+
 def _new_group(c, kind: str, now: float) -> int:
     name, key, ua, sid = _client()
-    if sid:     # 一个会话同一时刻只绑定一个组
+    up = _upstream()
+    if up:
+        kind, sid = "chat", ""
+    elif sid:   # 一个会话同一时刻只绑定一个组
         c.execute("UPDATE conversations SET session_id='' WHERE session_id=?", (sid,))
-    return c.execute("INSERT INTO conversations(mode, client, client_key, started, updated, kind, session_id, client_ua)"
-                     " VALUES(?,?,?,?,?,?,?,?)", (MODE, name, key, now, now, kind, sid, ua[:200])).lastrowid
+    return c.execute("INSERT INTO conversations(mode, client, client_key, started, updated, kind, session_id, client_ua, upstream_id)"
+                     " VALUES(?,?,?,?,?,?,?,?,?)", (MODE, name, key, now, now, kind, sid, ua[:200], up)).lastrowid
 
 
 def _conversation(c, now: float) -> int:
     """找到当前请求所属的组，没有就新建"""
     _, key, _, sid = _client()
+    up = _upstream()
+    if up:
+        row = c.execute("SELECT id FROM conversations WHERE upstream_id=? AND mode=? ORDER BY id DESC LIMIT 1",
+                        (up, MODE)).fetchone()
+        return row[0] if row else _new_group(c, "chat", now)
     if sid:
         row = c.execute("SELECT id FROM conversations WHERE session_id=? AND mode=? ORDER BY id DESC LIMIT 1",
                         (sid, MODE)).fetchone()
         return row[0] if row else _new_group(c, "session", now)
-    row = c.execute("SELECT id, updated FROM conversations WHERE client_key=? AND session_id='' ORDER BY updated DESC LIMIT 1",
+    row = c.execute("SELECT id, updated FROM conversations WHERE client_key=? AND session_id='' AND upstream_id='' ORDER BY updated DESC LIMIT 1",
                     (key,)).fetchone()
     if row and now - row[1] < CONV_GAP:
         return row[0]
@@ -816,7 +831,7 @@ if memory_init():
         mcp.tool(annotations=NOTE)(memory_save)
         mcp.tool(annotations=NOTE)(memory_update)
         mcp.tool(annotations=RW)(memory_delete)
-        MEM_HINT += "；了解到值得长期记住的信息时用 memory_save 保存，发现记忆过时用 memory_update 修改"
+        MEM_HINT += "；了解到值得长期记住的信息时用 memory_save 保存（或在完成任务调用 history_note 时写进 memories 参数），发现记忆过时用 memory_update 修改"
     MEM_HINT += "。"
 BASE_INSTRUCTIONS = mcp._mcp_server.instructions or ""
 
@@ -890,14 +905,20 @@ def history_calls(conversation_id: int = 0, tool: str = "", query: str = "", lim
     return HIST_PREFIX + "\n".join(out)
 
 
-def history_note(title: str = "", summary: str = "", new_conversation: bool = False, conversation_id: int = 0) -> str:
-    """为当前这组操作写标题和摘要，方便以后（包括其他 AI）查阅：完成任务时写下用户需求、做了什么、结果和待办。
+def history_note(title: str = "", summary: str = "", memories: str = "", new_conversation: bool = False,
+                 conversation_id: int = 0) -> str:
+    """完成任务时调用：为当前这组操作写标题和摘要，方便以后（包括其他 AI）查阅——写下用户需求、做了什么、结果和待办。
+    memories：本次了解到、以后值得长期记住的信息（用户偏好、项目路径与约定、重要结论），每行一条，会自动存入记忆库；没有就留空。
     new_conversation=True：从现在开始新的一组（开始与之前无关的新任务时使用）。
-    conversation_id=编号：把当前会话接回之前的组（同一个聊天里之前 history_note 返回过的编号），之后的操作也记到那一组。"""
+    conversation_id=编号：把当前会话接回之前的组（同一个聊天里之前 history_note 返回过的编号），之后的操作也记到那一组。
+    客户端提供聊天标识时（如 ChatGPT），ZERO 会自动按聊天归组，new_conversation 和 conversation_id 会被忽略。"""
     _, key, _, sid = _client()
+    up = _upstream()
     now = time.time()
     with _db() as c:
-        if conversation_id:
+        if up:
+            cid = _conversation(c, now)
+        elif conversation_id:
             row = c.execute("SELECT id FROM conversations WHERE id=? AND mode=?", (int(conversation_id), MODE)).fetchone()
             if not row:
                 return f"没有找到分组 #{conversation_id}（只能接回同一访问模式下已有的分组）"
@@ -923,9 +944,19 @@ def history_note(title: str = "", summary: str = "", new_conversation: bool = Fa
             sets.append("summary=?"); ps.append(redact(summary.strip(), 4000))
         c.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id=?", ps + [cid])
         kind = c.execute("SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone()[0]
-    tip = "" if sid else "（当前客户端未回传会话标识，分组按时间推断）"
+    mem = ""
+    lines = [ln.strip().lstrip("-*•·0123456789.、) ").strip() for ln in (memories or "").splitlines()]
+    lines = [ln for ln in lines if len(ln) >= 4][:10]
+    if lines:
+        if MEMORY_DB and MEMORY_WRITE:
+            mem = "\n记忆库：" + "；".join(memory_save(ln) for ln in lines)
+        else:
+            mem = "\n（记忆库未启用或不允许 AI 写入，memories 未保存）"
+    if up:
+        return f"已保存到分组 #{cid}（{KIND_TEXT.get(kind, kind)}：ZERO 会自动把同一个聊天的操作归到这一组）。" + mem
+    tip = "" if sid else "（当前客户端未提供聊天或会话标识，分组按时间推断）"
     return (f"已保存到分组 #{cid}（{KIND_TEXT.get(kind, kind)}）{tip}。"
-            f"在同一个聊天里之后再调用 history_note 时可传 conversation_id={cid}，保证记录归到同一组。")
+            f"在同一个聊天里之后再调用 history_note 时可传 conversation_id={cid}，保证记录归到同一组。" + mem)
 
 
 if history_init():
@@ -965,7 +996,9 @@ def with_auth(app):
             return await send({"type": "http.response.body", "body": b"unauthorized"})
         ua = headers.get(b"user-agent", b"").decode(errors="replace")[:200]
         sid = headers.get(b"mcp-session-id", b"").decode(errors="replace")[:64]
-        info = {"ua": ua, "sid": sid if sid.startswith(SID_PREFIX) else "", "call": None, "recorded": False}
+        up = headers.get(b"x-openai-session", b"").decode(errors="replace").strip()[:200]
+        info = {"ua": ua, "sid": sid if sid.startswith(SID_PREFIX) else "", "call": None, "recorded": False,
+                "up": f"openai:{up}" if up else ""}
         REQ_INFO.set(info)
         if not (HISTORY_DB or MEMORY_DB or REQLOG):
             return await app(scope, receive, send)
@@ -976,6 +1009,9 @@ def with_auth(app):
             _reqlog(method, scope, headers, info)
             return await app(scope, receive, send)
         receive = await _sniff(receive, info)
+        meta = info.get("meta")
+        if not info["up"] and isinstance(meta, dict) and isinstance(meta.get("openai/session"), str) and meta["openai/session"]:
+            info["up"] = "openai:" + meta["openai/session"][:200]
         _reqlog(method, scope, headers, info)
         if info.get("init") and HISTORY_DB:    # 新会话：签发 ZERO 自己的会话标识，支持的客户端会在后续请求中回传
             info["sid"] = SID_PREFIX + uuid.uuid4().hex[:16]

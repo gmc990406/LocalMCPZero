@@ -98,7 +98,7 @@
 ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOCALAPPDATA%\ZERO\history.db`），**不同 AI（Notion AI、Claude、Gemini…）的操作都汇总在一起**，任何一个 AI 都能接着看之前做过什么。
 
 - **按对话 / 按工具** 两种方式浏览：主界面点「历史记录」打开。
-- **自动分组**：ZERO 会给每次 MCP 连接签发会话标识（`Mcp-Session-Id`），回传该标识的客户端按 **MCP 会话** 分组；不回传的客户端按「同一客户端 + 30 分钟内」**推断**分组，界面会标注「推断」。AI 可以用 `history_note(new_conversation=true)` 新开一组，或用 `history_note(conversation_id=编号)` 接回同一个聊天之前的组；分错了可以在界面里「从这里拆分」或「合并到上一组」。参数校验失败、工具不存在等没有真正执行的调用也会记录为失败。
+- **自动分组**：客户端提供聊天标识时（如 ChatGPT 的 `x-openai-session`）**按聊天分组**，同一个聊天的操作始终在一组，多个聊天同时进行也不会混；否则 ZERO 会给每次 MCP 连接签发会话标识（`Mcp-Session-Id`），回传该标识的客户端按 **MCP 会话** 分组；不回传的客户端按「同一客户端 + 30 分钟内」**推断**分组，界面会标注「推断」。AI 可以用 `history_note(new_conversation=true)` 新开一组，或用 `history_note(conversation_id=编号)` 接回同一个聊天之前的组；分错了可以在界面里「从这里拆分」或「合并到上一组」。参数校验失败、工具不存在等没有真正执行的调用也会记录为失败。
 - **跟着电脑走**：历史和设置保存在当前 Windows 用户的 `%LOCALAPPDATA%\ZERO\`，与程序位置无关——更新 ZERO、移动或重新下载 exe 都不会丢失；数据库升级前会自动备份为 `history.db.bak-v1`。历史窗口底部「数据文件夹」可直接打开该目录。
 - **可编辑**：对话标题、摘要、每条记录的备注都可以修改（AI 查看历史时会读到这些内容）；可删除单条记录或整个对话，可置顶。
 - **自动清理**：默认保留 30 天（可选 7 / 30 / 90 天或永久），置顶的对话不会被清理。
@@ -112,7 +112,7 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 
 跨 AI 共享的长期记忆（`%LOCALAPPDATA%\ZERO\memory.db`，不随历史记录清理）：用户偏好、项目位置与约定、之前得出的结论等。
 
-- AI 用 `memory_search` 搜索（开始任务前会先查），用 `memory_save` / `memory_update` / `memory_delete` 保存、修改、删除。
+- AI 用 `memory_search` 搜索（开始任务前会先查），用 `memory_save` / `memory_update` / `memory_delete` 保存、修改、删除。完成任务时 AI 调用 `history_note`，可在 `memories` 参数里顺带写下本次值得长期记住的信息，自动存入记忆库。
 - 主界面点「记忆库」查看和编辑：新建、修改内容和标签、按标签筛选、删除。
 - **置顶**的记忆会在 AI 连接时直接写进服务说明（无需搜索），且 AI 不能删除。
 - 每条记忆可设置可见范围：所有模式 / 仅全电脑访问 / 仅有限制模式（AI 保存时默认为当前模式）。
@@ -262,7 +262,7 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 ZERO records every tool call made on this PC to a local database (`%LOCALAPPDATA%\ZERO\history.db`). **Calls from different AI clients (Notion AI, Claude, Gemini…) are kept together**, so any AI can pick up where another left off.
 
 - **Browse by conversation or by tool**: click "历史记录" (History) in the main window.
-- **Automatic grouping**: ZERO issues an `Mcp-Session-Id` on every MCP connection. Clients that echo it are grouped by **MCP session**; others are grouped by *inferred* activity (same client within 30 minutes), marked "推断" in the UI. An AI can start a new group with `history_note(new_conversation=true)` or reattach to an earlier group of the same chat with `history_note(conversation_id=N)`; you can split or merge groups in the UI. Calls rejected before running (validation errors, unknown tools) are recorded as failures too.
+- **Automatic grouping**: when the client provides a chat ID (e.g. ChatGPT's `x-openai-session`), calls are **grouped per chat**, even when several chats run at once. Otherwise ZERO issues an `Mcp-Session-Id` on every MCP connection. Clients that echo it are grouped by **MCP session**; others are grouped by *inferred* activity (same client within 30 minutes), marked "推断" in the UI. An AI can start a new group with `history_note(new_conversation=true)` or reattach to an earlier group of the same chat with `history_note(conversation_id=N)`; you can split or merge groups in the UI. Calls rejected before running (validation errors, unknown tools) are recorded as failures too.
 - **Stays with the PC**: history and settings live in the current Windows user's `%LOCALAPPDATA%\ZERO\`, independent of where the exe is — updating, moving or re-downloading ZERO keeps them. The database is backed up to `history.db.bak-v1` before schema upgrades. Use "数据文件夹" (Data folder) at the bottom of the history window to open it.
 - **Editable**: conversation titles, summaries and per-call notes (AI clients read these); delete single calls or whole conversations; pin important ones.
 - **Retention**: 30 days by default (7 / 30 / 90 days or forever); pinned conversations are never cleaned up.

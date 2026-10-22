@@ -106,6 +106,7 @@ public partial class HistoryWindow : Window
             MetaText.Text = $"#{_conv.Id} · {_conv.Client} · {_conv.Range} · {_conv.ModeText} · {_conv.KindText}";
             MetaText.ToolTip = _conv.Inferred
                 ? "这一组是按「同一客户端 + 时间相近」推断出来的，可能包含多个聊天，也可能把一个聊天拆成多组。可用「拆分」或「合并到上一组」调整。"
+                : _conv.Kind == "chat" ? "这一组对应 AI 客户端里的一个聊天（由客户端提供的聊天标识确定，例如 ChatGPT）。"
                 : _conv.Kind == "session" ? "这一组来自同一个 MCP 会话（由 AI 客户端回传的会话标识确定）。" : null;
             PinIcon.Stroke = _conv.Pinned ? (Brush)FindResource("Accent") : (Brush)FindResource("TextSecondary");
             BtnPin.ToolTip = _conv.Pinned ? "取消置顶" : "置顶（不会被自动清理）";
