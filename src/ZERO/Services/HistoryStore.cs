@@ -19,6 +19,9 @@ public sealed class ConversationItem
     public bool Pinned { get; init; }
     /// <summary>分组来源：session=MCP 会话，activity=按时间推断，explicit=AI 新建，manual=手动拆分，legacy=旧版（推断）</summary>
     public string Kind { get; init; } = "legacy";
+    /// <summary>位 1 = 标题由 ZERO 根据操作自动生成，位 2 = 摘要自动生成（AI 或用户改写后清除）</summary>
+    public long Auto { get; init; }
+    public bool AutoTitle => (Auto & 1) != 0 && !string.IsNullOrWhiteSpace(Title);
 
     public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? "未命名对话" : Title;
     public bool Untitled => string.IsNullOrWhiteSpace(Title);
@@ -28,7 +31,7 @@ public sealed class ConversationItem
     {
         "chat" => "按聊天", "session" => "MCP 会话", "activity" => "按时间推断", "explicit" => "AI 新建", "manual" => "手动拆分", _ => "旧版分组（推断）",
     };
-    public string Meta => $"{Client} · {HistoryStore.When(Updated)} · {(Calls > 0 ? $"{Calls} 次操作" : "无操作")}{(Inferred ? " · 推断" : "")}";
+    public string Meta => $"{Client} · {HistoryStore.When(Updated)} · {(Calls > 0 ? $"{Calls} 次操作" : "无操作")}{(Inferred ? " · 推断" : "")}{(AutoTitle ? " · 自动标题" : "")}";
     public string ModeText => Mode == "full" ? "全电脑访问" : "有限制";
     public string Range => Started.Date == Updated.Date
         ? $"{Started:yyyy-MM-dd HH:mm} – {Updated:HH:mm}"
@@ -89,7 +92,7 @@ public static class HistoryStore
     public static string DbPath { get; } =
         Environment.GetEnvironmentVariable("ZERO_HISTORY_DB") is { Length: > 0 } p ? p : Path.Combine(AppSettings.DataDir, "history.db");
 
-    const int SchemaVersion = 2;
+    const int SchemaVersion = 3;
     // 与 server.py 中的 SCHEMA / MIGRATE_V2 保持一致
     const string Schema = """
         CREATE TABLE IF NOT EXISTS conversations(
@@ -114,6 +117,7 @@ public static class HistoryStore
         "ALTER TABLE conversations ADD COLUMN client_ua TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE conversations ADD COLUMN upstream_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE calls ADD COLUMN session_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE conversations ADD COLUMN auto INTEGER NOT NULL DEFAULT 0",   // v3：位 1 = 标题自动生成，位 2 = 摘要自动生成
     };
 
     static bool _ready;
@@ -195,7 +199,7 @@ public static class HistoryStore
         var list = new List<ConversationItem>();
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT id, mode, client, title, summary, started, updated, calls, pinned, kind FROM conversations v" +
+        cmd.CommandText = "SELECT id, mode, client, title, summary, started, updated, calls, pinned, kind, auto FROM conversations v" +
                           (string.IsNullOrWhiteSpace(query) ? "" : " WHERE " + SearchCond) +
                           " ORDER BY pinned DESC, updated DESC LIMIT 500";
         cmd.Parameters.AddWithValue("$q", $"%{query.Trim()}%");
@@ -205,7 +209,7 @@ public static class HistoryStore
             {
                 Id = r.GetInt64(0), Mode = r.GetString(1), Client = r.GetString(2), Title = r.GetString(3), Summary = r.GetString(4),
                 Started = ToLocal(r.GetDouble(5)), Updated = ToLocal(r.GetDouble(6)), Calls = r.GetInt64(7), Pinned = r.GetInt64(8) != 0,
-                Kind = r.GetString(9),
+                Kind = r.GetString(9), Auto = r.GetInt64(10),
             });
         return list;
     }
@@ -252,7 +256,13 @@ public static class HistoryStore
     public static void UpdateConversation(long id, string title, string summary)
     {
         using var c = Open();
-        Exec(c, "UPDATE conversations SET title=$t, summary=$s WHERE id=$id", ("$t", title.Trim()), ("$s", summary.Trim()), ("$id", id));
+        // 用户改过的部分不再被自动生成覆盖
+        Exec(c, """
+            UPDATE conversations SET
+              auto = auto & ~(CASE WHEN title != $t THEN 1 ELSE 0 END) & ~(CASE WHEN summary != $s THEN 2 ELSE 0 END),
+              title=$t, summary=$s
+            WHERE id=$id
+            """, ("$t", title.Trim()), ("$s", summary.Trim()), ("$id", id));
     }
 
     public static void SetPinned(long id, bool pinned)

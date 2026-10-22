@@ -100,6 +100,7 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 - **按对话 / 按工具** 两种方式浏览：主界面点「历史记录」打开。
 - **自动分组**：客户端提供聊天标识时（如 ChatGPT 的 `x-openai-session`）**按聊天分组**，同一个聊天的操作始终在一组，多个聊天同时进行也不会混；否则 ZERO 会给每次 MCP 连接签发会话标识（`Mcp-Session-Id`），回传该标识的客户端按 **MCP 会话** 分组；不回传的客户端按「同一客户端 + 30 分钟内」**推断**分组，界面会标注「推断」。AI 可以用 `history_note(new_conversation=true)` 新开一组，或用 `history_note(conversation_id=编号)` 接回同一个聊天之前的组；分错了可以在界面里「从这里拆分」或「合并到上一组」。参数校验失败、工具不存在等没有真正执行的调用也会记录为失败。
 - **跟着电脑走**：历史和设置保存在当前 Windows 用户的 `%LOCALAPPDATA%\ZERO\`，与程序位置无关——更新 ZERO、移动或重新下载 exe 都不会丢失；数据库升级前会自动备份为 `history.db.bak-v1`。历史窗口底部「数据文件夹」可直接打开该目录。
+- **自动标题**：AI 没写标题和摘要时，ZERO 根据操作自动生成（如「修改 macos.html」「查看 Create」），并在每组第一次操作的结果里提醒 AI 完成后用 `history_note` 写标题、摘要和要记住的信息；AI 或你改写后不再覆盖。
 - **可编辑**：对话标题、摘要、每条记录的备注都可以修改（AI 查看历史时会读到这些内容）；可删除单条记录或整个对话，可置顶。
 - **自动清理**：默认保留 30 天（可选 7 / 30 / 90 天或永久），置顶的对话不会被清理。
 - **自动脱敏**：Token、密码、密钥（`password=…`、`Bearer …`、`ghp_…`、`sk-…` 等）在写入前替换为 `***`；超长参数和结果会截断。
@@ -261,6 +262,7 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 
 ZERO records every tool call made on this PC to a local database (`%LOCALAPPDATA%\ZERO\history.db`). **Calls from different AI clients (Notion AI, Claude, Gemini…) are kept together**, so any AI can pick up where another left off.
 
+- **Automatic titles**: if the AI doesn't write a title/summary, ZERO generates them from the operations (e.g. "修改 macos.html") and reminds the AI once per group to call `history_note`; AI or user edits are never overwritten.
 - **Browse by conversation or by tool**: click "历史记录" (History) in the main window.
 - **Automatic grouping**: when the client provides a chat ID (e.g. ChatGPT's `x-openai-session`), calls are **grouped per chat**, even when several chats run at once. Otherwise ZERO issues an `Mcp-Session-Id` on every MCP connection. Clients that echo it are grouped by **MCP session**; others are grouped by *inferred* activity (same client within 30 minutes), marked "推断" in the UI. An AI can start a new group with `history_note(new_conversation=true)` or reattach to an earlier group of the same chat with `history_note(conversation_id=N)`; you can split or merge groups in the UI. Calls rejected before running (validation errors, unknown tools) are recorded as failures too.
 - **Stays with the PC**: history and settings live in the current Windows user's `%LOCALAPPDATA%\ZERO\`, independent of where the exe is — updating, moving or re-downloading ZERO keeps them. The database is backed up to `history.db.bak-v1` before schema upgrades. Use "数据文件夹" (Data folder) at the bottom of the history window to open it.

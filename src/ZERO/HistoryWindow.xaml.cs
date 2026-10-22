@@ -104,6 +104,8 @@ public partial class HistoryWindow : Window
             if (!TitleEdit.IsKeyboardFocusWithin) TitleEdit.Text = _conv.Title;
             if (!SummaryEdit.IsKeyboardFocusWithin) SummaryEdit.Text = _conv.Summary;
             MetaText.Text = $"#{_conv.Id} · {_conv.Client} · {_conv.Range} · {_conv.ModeText} · {_conv.KindText}";
+            TitleEdit.ToolTip = _conv.AutoTitle ? "标题由 ZERO 根据操作自动生成（AI 写标题后会替换），点击可修改" : "点击编辑标题";
+            if (_conv.AutoTitle) MetaText.Text += " · 自动标题";
             MetaText.ToolTip = _conv.Inferred
                 ? "这一组是按「同一客户端 + 时间相近」推断出来的，可能包含多个聊天，也可能把一个聊天拆成多组。可用「拆分」或「合并到上一组」调整。"
                 : _conv.Kind == "chat" ? "这一组对应 AI 客户端里的一个聊天（由客户端提供的聊天标识确定，例如 ChatGPT）。"

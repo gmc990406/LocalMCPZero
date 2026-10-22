@@ -81,7 +81,7 @@ HISTORY_DB = os.environ.get("MCP_HISTORY_DB", "").strip()
 HISTORY_SHARE = os.environ.get("MCP_HISTORY_SHARE", "").strip() == "1"
 CONV_GAP = 30 * 60          # 无会话标识时：同一客户端超过 30 分钟无操作，视为新的一组
 HIST_ARG_MAX, HIST_RESULT_MAX = 2000, 4000
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SID_PREFIX = "zs-"          # ZERO 自己签发的会话标识前缀
 REQ_INFO = contextvars.ContextVar("REQ_INFO", default={})
 CLIENT_NAMES: dict = {}     # User-Agent -> 客户端名称（来自 initialize 的 clientInfo）
@@ -110,6 +110,8 @@ MIGRATE_V2 = [
     "ALTER TABLE conversations ADD COLUMN client_ua TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE conversations ADD COLUMN upstream_id TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE calls ADD COLUMN session_id TEXT NOT NULL DEFAULT ''",
+    # v3：标题/摘要是否为自动生成（位 1 = 标题，位 2 = 摘要）
+    "ALTER TABLE conversations ADD COLUMN auto INTEGER NOT NULL DEFAULT 0",
 ]
 _SECRET_RX = [
     (re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization)(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1\2***"),
@@ -186,6 +188,8 @@ def history_init() -> bool:
         with _db() as c:
             c.execute("PRAGMA journal_mode=WAL")
             _migrate(c)
+            for (cid,) in c.execute("SELECT id FROM conversations WHERE (title='' OR summary='') AND calls>0").fetchall():
+                _auto_fill(c, cid)      # 补齐以前没有标题的分组
         return True
     except Exception as e:
         log(f"历史记录不可用：{e}")
@@ -249,9 +253,97 @@ def _fmt_result(r) -> str:
     return "\n".join(parts)
 
 
-def history_record(tool: str, kwargs: dict, result: str, ok: bool, ms: int):
-    if not HISTORY_DB:
+# ---- 自动标题 / 摘要：AI 没写时，根据操作记录生成；AI 或用户写过之后不再覆盖 ----
+# conversations.auto：第 1 位 = 标题是自动生成的，第 2 位 = 摘要是自动生成的
+_AUTO_RANK = {"write_file": 6, "edit_file": 6, "make_dir": 5, "run_command": 4, "start_job": 4, "read_file": 3,
+              "search_files": 2, "list_files": 1}
+
+
+def _base(p) -> str:
+    p = str(p or "").strip().rstrip("\\/")
+    if p in ("", "."):
+        return "工作目录"
+    return re.split(r"[\\/]", p)[-1] or p
+
+
+def _short(s, n=28) -> str:
+    s = " ".join(str(s or "").split())
+    return s if len(s) <= n else s[:n] + "…"
+
+
+def _phrase(tool: str, a: dict) -> str:
+    g = a.get
+    return {
+        "list_files": lambda: f"查看 {_base(g('path'))}",
+        "read_file": lambda: f"读取 {_base(g('path'))}",
+        "write_file": lambda: f"写入 {_base(g('path'))}",
+        "edit_file": lambda: f"修改 {_base(g('path'))}",
+        "make_dir": lambda: f"新建文件夹 {_base(g('path'))}",
+        "search_files": lambda: f"搜索“{_short(g('pattern'), 20)}”",
+        "run_command": lambda: f"运行命令 {_short(g('command'))}",
+        "start_job": lambda: f"后台运行 {_short(g('command'))}",
+        "job_status": lambda: "查看后台任务", "list_jobs": lambda: "查看后台任务", "stop_job": lambda: "停止后台任务",
+        "screenshot": lambda: "截屏", "system_info": lambda: "查看系统信息", "list_processes": lambda: "查看进程",
+        "memory_search": lambda: "搜索记忆", "memory_save": lambda: "保存记忆",
+        "memory_update": lambda: "修改记忆", "memory_delete": lambda: "删除记忆",
+    }.get(tool, lambda: tool)()
+
+
+def _auto_fill(c, cid: int):
+    row = c.execute("SELECT title, summary, auto FROM conversations WHERE id=?", (cid,)).fetchone()
+    if not row:
         return
+    title, summ, auto = row
+    t_ok, s_ok = (not title or auto & 1), (not summ or auto & 2)
+    if not (t_ok or s_ok):
+        return
+    calls = []
+    for tool, args, ok in c.execute("SELECT tool, args, ok FROM calls WHERE conv_id=? ORDER BY ts LIMIT 300", (cid,)):
+        try:
+            a = json.loads(args)
+        except Exception:
+            a = {}
+        calls.append((tool, a if isinstance(a, dict) else {}, ok))
+    if not calls:
+        return
+    # 标题：最“重要”的一类操作（修改 > 新建 > 运行 > 读取 > 搜索 > 查看）
+    good = [(t, a) for t, a, ok in calls if ok] or [(t, a) for t, a, _ in calls]
+    top = max(_AUTO_RANK.get(t, 0) for t, _ in good)
+    main = [t_a for t_a in good if _AUTO_RANK.get(t_a[0], 0) == top]
+    if top == 6:    # 写文件：按文件归并，“写入 + 修改”同一个文件算一项
+        names = list(dict.fromkeys(_base(a.get("path")) for _, a in main))
+        verb = "写入" if all(t == "write_file" for t, _ in main) else "修改"
+        new_title = f"{verb} {names[0]}" + (f" 等 {len(names)} 个文件" if len(names) > 1 else "")
+    else:
+        targets = list(dict.fromkeys(_phrase(t, a) for t, a in main))
+        new_title = targets[0] if len(targets) == 1 else f"{targets[0]} 等 {len(targets)} 项"
+    # 摘要：按时间顺序列出操作（连续重复的合并为 ×N）
+    steps = []
+    for t, a, ok in calls:
+        p = _phrase(t, a) + ("（失败）" if not ok else "")
+        if steps and steps[-1][0] == p:
+            steps[-1][1] += 1
+        else:
+            steps.append([p, 1])
+    seq = " → ".join(p + (f" ×{n}" if n > 1 else "") for p, n in steps[:12]) + (" → …" if len(steps) > 12 else "")
+    fails = sum(1 for _, _, ok in calls if not ok)
+    new_summ = f"（自动生成）{len(calls)} 次操作{f'，{fails} 次失败' if fails else ''}：{seq}"
+    sets, ps, bits = [], [], auto
+    if t_ok:
+        sets.append("title=?"); ps.append(new_title[:200]); bits |= 1
+    if s_ok:
+        sets.append("summary=?"); ps.append(new_summ[:4000]); bits |= 2
+    c.execute(f"UPDATE conversations SET {', '.join(sets)}, auto=? WHERE id=?", ps + [bits, cid])
+
+
+NOTE_HINT = ("\n\n（ZERO 提示：完成本次任务后，请调用 history_note 为这个聊天写标题和摘要，"
+             "并把值得长期记住的信息写进 memories 参数。）")
+
+
+def history_record(tool: str, kwargs: dict, result: str, ok: bool, ms: int) -> bool:
+    """写入一条调用记录。返回 True 表示这是该分组的第一条记录（用于提示 AI 写标题）"""
+    if not HISTORY_DB:
+        return False
     info = REQ_INFO.get()
     if isinstance(info, dict) and info:
         info["recorded"] = True
@@ -264,8 +356,16 @@ def history_record(tool: str, kwargs: dict, result: str, ok: bool, ms: int):
                       (cid, now, tool, json.dumps(args, ensure_ascii=False, default=str), redact(result, HIST_RESULT_MAX),
                        int(ok), ms, info.get("sid", "") if isinstance(info, dict) else ""))
             c.execute("UPDATE conversations SET updated=?, calls=calls+1 WHERE id=?", (now, cid))
+            _auto_fill(c, cid)
+            return c.execute("SELECT calls FROM conversations WHERE id=?", (cid,)).fetchone()[0] == 1
     except Exception as e:
         log(f"写入历史失败：{e}")
+    return False
+
+
+def _hint(first: bool, r):
+    """分组的第一次操作：在文字结果后提醒 AI 完成后写标题（只提醒一次，不改动图片等其他结果）"""
+    return r + NOTE_HINT if first and isinstance(r, str) else r
 
 
 def _recorded(name: str, fn):
@@ -279,8 +379,7 @@ def _recorded(name: str, fn):
             except Exception as e:
                 history_record(name, kw, f"错误：{e}", False, int((time.time() - t0) * 1000))
                 raise
-            history_record(name, kw, _fmt_result(r), True, int((time.time() - t0) * 1000))
-            return r
+            return _hint(history_record(name, kw, _fmt_result(r), True, int((time.time() - t0) * 1000)), r)
         return aw
 
     @functools.wraps(fn)
@@ -291,8 +390,7 @@ def _recorded(name: str, fn):
         except Exception as e:
             history_record(name, kw, f"错误：{e}", False, int((time.time() - t0) * 1000))
             raise
-        history_record(name, kw, _fmt_result(r), True, int((time.time() - t0) * 1000))
-        return r
+        return _hint(history_record(name, kw, _fmt_result(r), True, int((time.time() - t0) * 1000)), r)
     return w
 
 
@@ -856,7 +954,7 @@ def history_conversations(query: str = "", client: str = "", days: int = 7, limi
     """列出最近的操作记录分组（含其他 AI 在这台电脑上的操作）。query 按标题/摘要/工具参数/结果搜索，client 按客户端名称筛选。
     返回分组编号，可再用 history_calls(conversation_id=编号) 查看具体操作。注意：分组来自 MCP 会话或按时间推断，不一定等于某个聊天窗口。"""
     limit = max(1, min(int(limit), 100))
-    sql = "SELECT id, client, title, summary, started, updated, calls, kind FROM conversations WHERE mode=? AND updated>=?"
+    sql = "SELECT id, client, title, summary, started, updated, calls, kind, auto FROM conversations WHERE mode=? AND updated>=?"
     ps = [MODE, time.time() - max(1, int(days)) * 86400]
     if client:
         sql += " AND client LIKE ?"; ps.append(f"%{client}%")
@@ -871,8 +969,9 @@ def history_conversations(query: str = "", client: str = "", days: int = 7, limi
     if not rows:
         return HIST_PREFIX + "没有找到符合条件的记录"
     out = []
-    for i, cl, title, summ, st, up, n, kind in rows:
-        out.append(f"#{i} [{cl}] {_ts(st)}–{_ts(up)[6:]} · {n} 次操作 · {KIND_TEXT.get(kind, kind)} · {title or '（未命名）'}")
+    for i, cl, title, summ, st, up, n, kind, auto in rows:
+        out.append(f"#{i} [{cl}] {_ts(st)}–{_ts(up)[6:]} · {n} 次操作 · {KIND_TEXT.get(kind, kind)} · {title or '（未命名）'}"
+                   + ("（自动标题）" if auto & 1 else ""))
         if summ:
             out.append("    摘要：" + summ.replace("\n", " ")[:300])
     return HIST_PREFIX + "\n".join(out)
@@ -937,11 +1036,13 @@ def history_note(title: str = "", summary: str = "", memories: str = "", new_con
             cid = _new_group(c, "explicit", now)
         else:
             cid = _conversation(c, now)
-        sets, ps = ["updated=?"], [now]
+        sets, ps, clear = ["updated=?"], [now], 0
         if title:
-            sets.append("title=?"); ps.append(redact(title.strip(), 200))
+            sets.append("title=?"); ps.append(redact(title.strip(), 200)); clear |= 1
         if summary:
-            sets.append("summary=?"); ps.append(redact(summary.strip(), 4000))
+            sets.append("summary=?"); ps.append(redact(summary.strip(), 4000)); clear |= 2
+        if clear:
+            sets.append(f"auto=auto & {~clear & 3}")
         c.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id=?", ps + [cid])
         kind = c.execute("SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone()[0]
     mem = ""
