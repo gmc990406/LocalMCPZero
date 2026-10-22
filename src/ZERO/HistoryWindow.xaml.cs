@@ -25,6 +25,7 @@ public partial class HistoryWindow : Window
     {
         InitializeComponent();
         _settings = settings;
+        BtnDataDir.ToolTip = $"历史记录保存在这台电脑的当前用户目录下，更新 ZERO 或移动程序位置都不会丢失：\n{System.IO.Path.GetFullPath(HistoryStore.DbPath)}";
         RecordSwitch.IsChecked = settings.HistoryEnabled;
         ShareSwitch.IsChecked = settings.HistoryShare;
         ShareSwitch.IsEnabled = settings.HistoryEnabled;
@@ -102,7 +103,10 @@ public partial class HistoryWindow : Window
             SummaryPanel.Visibility = Visibility.Visible; ConvActions.Visibility = Visibility.Visible;
             if (!TitleEdit.IsKeyboardFocusWithin) TitleEdit.Text = _conv.Title;
             if (!SummaryEdit.IsKeyboardFocusWithin) SummaryEdit.Text = _conv.Summary;
-            MetaText.Text = $"#{_conv.Id} · {_conv.Client} · {_conv.Range} · {_conv.ModeText}";
+            MetaText.Text = $"#{_conv.Id} · {_conv.Client} · {_conv.Range} · {_conv.ModeText} · {_conv.KindText}";
+            MetaText.ToolTip = _conv.Inferred
+                ? "这一组是按「同一客户端 + 时间相近」推断出来的，可能包含多个聊天，也可能把一个聊天拆成多组。可用「拆分」或「合并到上一组」调整。"
+                : _conv.Kind == "session" ? "这一组来自同一个 MCP 会话（由 AI 客户端回传的会话标识确定）。" : null;
             PinIcon.Stroke = _conv.Pinned ? (Brush)FindResource("Accent") : (Brush)FindResource("TextSecondary");
             BtnPin.ToolTip = _conv.Pinned ? "取消置顶" : "置顶（不会被自动清理）";
             calls = HistoryStore.Calls(_conv.Id, null);
@@ -235,6 +239,35 @@ public partial class HistoryWindow : Window
         var callId = _call.Id;
         Try(() => id = HistoryStore.SplitFrom(callId));
         if (id > 0) Reload(id, callId);
+    }
+
+    void Merge_Click(object s, RoutedEventArgs e)
+    {
+        if (_conv == null) return;
+        ConversationItem? prev = null;
+        Try(() => prev = HistoryStore.Previous(_conv));
+        if (prev == null)
+        {
+            ZeroDialog.Show(this, new DialogSpec("没有可合并的上一组", $"{_conv.Client} 在这一组之前没有其他记录。", DialogKind.Info, "好", null));
+            return;
+        }
+        if (!ZeroDialog.Show(this, new DialogSpec("合并到上一组？",
+                $"把这一组的 {_conv.Calls} 条记录并入 #{prev.Id}「{prev.DisplayTitle}」。适用于同一个聊天被分成了多组。", DialogKind.Question, "合并"))) return;
+        long from = _conv.Id, into = prev.Id;
+        Try(() => HistoryStore.Merge(from, into));
+        _conv = null; _call = null;
+        Reload(into);
+    }
+
+    void DataDir_Click(object s, RoutedEventArgs e)
+    {
+        var db = System.IO.Path.GetFullPath(HistoryStore.DbPath);
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe",
+                System.IO.File.Exists(db) ? $"/select,\"{db}\"" : $"\"{System.IO.Path.GetDirectoryName(db)}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex) { AppLog.Error("历史", ex); }
     }
 
     void GoConv_Click(object s, RoutedEventArgs e)

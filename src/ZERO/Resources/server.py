@@ -44,7 +44,7 @@ def log(msg: str):
 
 
 HIST_HINT = ("这台电脑上的操作会被 ZERO 记录（可能来自其他 AI）。开始任务前可用 history_conversations 了解之前做过什么；"
-             "完成任务后请用 history_note 为本次对话写标题和摘要。"
+             "完成任务后请用 history_note 为本次操作写标题和摘要（同一聊天里再次调用时传入上次返回的 conversation_id）。"
              if os.environ.get("MCP_HISTORY_DB", "").strip() and os.environ.get("MCP_HISTORY_SHARE", "").strip() == "1"
              else "完成任务后可用 history_note 为本次对话写标题和摘要。" if os.environ.get("MCP_HISTORY_DB", "").strip() else "")
 
@@ -67,14 +67,22 @@ RW = (ToolAnnotations(readOnlyHint=True, destructiveHint=False) if TRUST
 NOTE = RO if TRUST else ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True)
 
 
-# ---------------- 历史记录（按对话 / 按工具存储在本机 SQLite） ----------------
+# ---------------- 历史记录（按 MCP 会话 / 按工具存储在本机 SQLite） ----------------
+# 分组规则（只使用真实存在的标识，不编造聊天 ID）：
+#   1. 客户端支持 MCP 会话（回传 Mcp-Session-Id）→ 同一会话的操作归为一组（kind=session）
+#   2. 不支持 → 按「同一客户端 + 30 分钟内」推断分组（kind=activity，界面标注“推断”）
+#   3. AI 可用 history_note(new_conversation=True) 新开一组（kind=explicit），
+#      或用 history_note(conversation_id=N) 把当前会话接回之前的组
 HISTORY_DB = os.environ.get("MCP_HISTORY_DB", "").strip()
 HISTORY_SHARE = os.environ.get("MCP_HISTORY_SHARE", "").strip() == "1"
-CONV_GAP = 30 * 60          # 同一客户端超过 30 分钟无操作，视为新对话
+CONV_GAP = 30 * 60          # 无会话标识时：同一客户端超过 30 分钟无操作，视为新的一组
 HIST_ARG_MAX, HIST_RESULT_MAX = 2000, 4000
+SCHEMA_VERSION = 2
+SID_PREFIX = "zs-"          # ZERO 自己签发的会话标识前缀
 REQ_INFO = contextvars.ContextVar("REQ_INFO", default={})
 CLIENT_NAMES: dict = {}     # User-Agent -> 客户端名称（来自 initialize 的 clientInfo）
-_FORCE_NEW: set = set()  # 下一次调用强制开始新对话的客户端
+SID_NAMES: dict = {}        # 会话标识 -> 客户端名称
+KIND_TEXT = {"session": "MCP 会话", "activity": "按时间推断", "explicit": "AI 新建", "manual": "手动拆分", "legacy": "旧版分组（推断）"}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,6 +99,14 @@ CREATE INDEX IF NOT EXISTS ix_calls_conv ON calls(conv_id, ts);
 CREATE INDEX IF NOT EXISTS ix_calls_tool ON calls(tool, ts);
 CREATE INDEX IF NOT EXISTS ix_conv_updated ON conversations(updated);
 """
+# v2 新增列（与 HistoryStore.cs 保持一致）；旧数据 kind 记为 legacy
+MIGRATE_V2 = [
+    "ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'legacy'",
+    "ALTER TABLE conversations ADD COLUMN session_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE conversations ADD COLUMN client_ua TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE conversations ADD COLUMN upstream_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE calls ADD COLUMN session_id TEXT NOT NULL DEFAULT ''",
+]
 _SECRET_RX = [
     (re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization)(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1\2***"),
     (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"), "Bearer ***"),
@@ -131,6 +147,32 @@ def _db():
         c.close()
 
 
+def _migrate(c):
+    """升级数据库结构。升级前先把旧库完整备份为 history.db.bak-v1（只备份一次），绝不删除旧数据"""
+    import sqlite3
+    if c.execute("PRAGMA user_version").fetchone()[0] >= SCHEMA_VERSION:
+        return
+    old = c.execute("SELECT COUNT(*) FROM sqlite_master WHERE name='conversations'").fetchone()[0]
+    has_kind = old and any(r[1] == "kind" for r in c.execute("PRAGMA table_info(conversations)"))
+    bak = Path(HISTORY_DB + ".bak-v1")
+    if old and not has_kind and not bak.exists():
+        b = sqlite3.connect(str(bak))
+        try:
+            c.backup(b)
+        finally:
+            b.close()
+        log(f"历史库升级前已备份：{bak.name}")
+    c.executescript(SCHEMA)
+    for sql in MIGRATE_V2:
+        try:
+            c.execute(sql)
+        except sqlite3.OperationalError as e:      # 另一个进程已经加过这一列
+            if "duplicate column" not in str(e).lower():
+                raise
+    c.execute("CREATE INDEX IF NOT EXISTS ix_conv_session ON conversations(session_id)")
+    c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+
 def history_init() -> bool:
     global HISTORY_DB
     if not HISTORY_DB:
@@ -139,7 +181,7 @@ def history_init() -> bool:
         Path(HISTORY_DB).parent.mkdir(parents=True, exist_ok=True)
         with _db() as c:
             c.execute("PRAGMA journal_mode=WAL")
-            c.executescript(SCHEMA)
+            _migrate(c)
         return True
     except Exception as e:
         log(f"历史记录不可用：{e}")
@@ -148,21 +190,34 @@ def history_init() -> bool:
 
 
 def _client() -> tuple:
-    """返回 (显示名称, 分组键)。无状态模式下没有会话 ID，用 User-Agent 区分客户端"""
-    ua = REQ_INFO.get().get("ua", "") or "未知客户端"
-    name = CLIENT_NAMES.get(ua) or ua.split(" ")[0][:40]
-    return name, f"{MODE}|{ua}"
+    """返回 (显示名称, 客户端键, User-Agent, 会话标识)"""
+    info = REQ_INFO.get()
+    ua = info.get("ua", "") or "未知客户端"
+    sid = info.get("sid", "")
+    name = SID_NAMES.get(sid) or CLIENT_NAMES.get(ua) or ua.split(" ")[0][:40]
+    return name, f"{MODE}|{ua}", ua, sid
+
+
+def _new_group(c, kind: str, now: float) -> int:
+    name, key, ua, sid = _client()
+    if sid:     # 一个会话同一时刻只绑定一个组
+        c.execute("UPDATE conversations SET session_id='' WHERE session_id=?", (sid,))
+    return c.execute("INSERT INTO conversations(mode, client, client_key, started, updated, kind, session_id, client_ua)"
+                     " VALUES(?,?,?,?,?,?,?,?)", (MODE, name, key, now, now, kind, sid, ua[:200])).lastrowid
 
 
 def _conversation(c, now: float) -> int:
-    name, key = _client()
-    row = None if key in _FORCE_NEW else c.execute(
-        "SELECT id, updated FROM conversations WHERE client_key=? ORDER BY updated DESC LIMIT 1", (key,)).fetchone()
-    _FORCE_NEW.discard(key)
+    """找到当前请求所属的组，没有就新建"""
+    _, key, _, sid = _client()
+    if sid:
+        row = c.execute("SELECT id FROM conversations WHERE session_id=? AND mode=? ORDER BY id DESC LIMIT 1",
+                        (sid, MODE)).fetchone()
+        return row[0] if row else _new_group(c, "session", now)
+    row = c.execute("SELECT id, updated FROM conversations WHERE client_key=? AND session_id='' ORDER BY updated DESC LIMIT 1",
+                    (key,)).fetchone()
     if row and now - row[1] < CONV_GAP:
         return row[0]
-    return c.execute("INSERT INTO conversations(mode, client, client_key, started, updated) VALUES(?,?,?,?,?)",
-                     (MODE, name, key, now, now)).lastrowid
+    return _new_group(c, "activity", now)
 
 
 def _fmt_result(r) -> str:
@@ -179,13 +234,17 @@ def _fmt_result(r) -> str:
 def history_record(tool: str, kwargs: dict, result: str, ok: bool, ms: int):
     if not HISTORY_DB:
         return
+    info = REQ_INFO.get()
+    if isinstance(info, dict) and info:
+        info["recorded"] = True
     try:
-        args = {k: (redact(v, HIST_ARG_MAX) if isinstance(v, str) else v) for k, v in kwargs.items()}
+        args = {k: (redact(v, HIST_ARG_MAX) if isinstance(v, str) else v) for k, v in (kwargs or {}).items()}
         now = time.time()
         with _db() as c:
             cid = _conversation(c, now)
-            c.execute("INSERT INTO calls(conv_id, ts, tool, args, result, ok, ms) VALUES(?,?,?,?,?,?,?)",
-                      (cid, now, tool, json.dumps(args, ensure_ascii=False), redact(result, HIST_RESULT_MAX), int(ok), ms))
+            c.execute("INSERT INTO calls(conv_id, ts, tool, args, result, ok, ms, session_id) VALUES(?,?,?,?,?,?,?,?)",
+                      (cid, now, tool, json.dumps(args, ensure_ascii=False, default=str), redact(result, HIST_RESULT_MAX),
+                       int(ok), ms, info.get("sid", "") if isinstance(info, dict) else ""))
             c.execute("UPDATE conversations SET updated=?, calls=calls+1 WHERE id=?", (now, cid))
     except Exception as e:
         log(f"写入历史失败：{e}")
@@ -584,10 +643,10 @@ def _ts(t: float) -> str:
 
 
 def history_conversations(query: str = "", client: str = "", days: int = 7, limit: int = 20) -> str:
-    """列出最近的对话（含其他 AI 在这台电脑上的操作）。query 按标题/摘要/工具参数/结果搜索，client 按客户端名称筛选。
-    返回对话编号，可再用 history_calls(conversation_id=编号) 查看具体操作。"""
+    """列出最近的操作记录分组（含其他 AI 在这台电脑上的操作）。query 按标题/摘要/工具参数/结果搜索，client 按客户端名称筛选。
+    返回分组编号，可再用 history_calls(conversation_id=编号) 查看具体操作。注意：分组来自 MCP 会话或按时间推断，不一定等于某个聊天窗口。"""
     limit = max(1, min(int(limit), 100))
-    sql = "SELECT id, client, title, summary, started, updated, calls FROM conversations WHERE mode=? AND updated>=?"
+    sql = "SELECT id, client, title, summary, started, updated, calls, kind FROM conversations WHERE mode=? AND updated>=?"
     ps = [MODE, time.time() - max(1, int(days)) * 86400]
     if client:
         sql += " AND client LIKE ?"; ps.append(f"%{client}%")
@@ -600,17 +659,17 @@ def history_conversations(query: str = "", client: str = "", days: int = 7, limi
     with _db() as c:
         rows = c.execute(sql, ps).fetchall()
     if not rows:
-        return HIST_PREFIX + "没有找到符合条件的对话"
+        return HIST_PREFIX + "没有找到符合条件的记录"
     out = []
-    for i, cl, title, summ, st, up, n in rows:
-        out.append(f"#{i} [{cl}] {_ts(st)}–{_ts(up)[6:]} · {n} 次操作 · {title or '（未命名）'}")
+    for i, cl, title, summ, st, up, n, kind in rows:
+        out.append(f"#{i} [{cl}] {_ts(st)}–{_ts(up)[6:]} · {n} 次操作 · {KIND_TEXT.get(kind, kind)} · {title or '（未命名）'}")
         if summ:
             out.append("    摘要：" + summ.replace("\n", " ")[:300])
     return HIST_PREFIX + "\n".join(out)
 
 
 def history_calls(conversation_id: int = 0, tool: str = "", query: str = "", limit: int = 30, full: bool = False) -> str:
-    """查看历史操作记录。conversation_id 指定对话（来自 history_conversations），tool 按工具名筛选（如 run_command），
+    """查看历史操作记录。conversation_id 指定分组（来自 history_conversations），tool 按工具名筛选（如 run_command），
     query 搜索参数/结果；full=True 显示完整参数和结果（默认只显示摘要）。"""
     limit = max(1, min(int(limit), 200))
     sql = ("SELECT k.id, k.conv_id, v.client, k.ts, k.tool, k.args, k.result, k.ok, k.note FROM calls k "
@@ -636,22 +695,42 @@ def history_calls(conversation_id: int = 0, tool: str = "", query: str = "", lim
     return HIST_PREFIX + "\n".join(out)
 
 
-def history_note(title: str = "", summary: str = "", new_conversation: bool = False) -> str:
-    """为当前对话写标题和摘要，方便以后（包括其他 AI）查阅：完成任务时写下用户需求、做了什么、结果和待办。
-    new_conversation=True 表示从现在开始一个新对话（开始与之前无关的新任务时使用）。"""
-    _, key = _client()
+def history_note(title: str = "", summary: str = "", new_conversation: bool = False, conversation_id: int = 0) -> str:
+    """为当前这组操作写标题和摘要，方便以后（包括其他 AI）查阅：完成任务时写下用户需求、做了什么、结果和待办。
+    new_conversation=True：从现在开始新的一组（开始与之前无关的新任务时使用）。
+    conversation_id=编号：把当前会话接回之前的组（同一个聊天里之前 history_note 返回过的编号），之后的操作也记到那一组。"""
+    _, key, _, sid = _client()
     now = time.time()
     with _db() as c:
-        if new_conversation:
-            _FORCE_NEW.add(key)
-        cid = _conversation(c, now)
+        if conversation_id:
+            row = c.execute("SELECT id FROM conversations WHERE id=? AND mode=?", (int(conversation_id), MODE)).fetchone()
+            if not row:
+                return f"没有找到分组 #{conversation_id}（只能接回同一访问模式下已有的分组）"
+            cid = row[0]
+            if sid:     # 把本会话已记录的操作挪到目标组，空出来的自动组删除
+                for (old,) in c.execute("SELECT id FROM conversations WHERE session_id=? AND id!=?", (sid, cid)).fetchall():
+                    c.execute("UPDATE calls SET conv_id=? WHERE conv_id=? AND session_id=?", (cid, old, sid))
+                    c.execute("DELETE FROM conversations WHERE id=? AND title='' AND summary='' AND pinned=0"
+                              " AND NOT EXISTS(SELECT 1 FROM calls WHERE conv_id=?)", (old, old))
+                c.execute("UPDATE conversations SET session_id='' WHERE session_id=?", (sid,))
+                c.execute("UPDATE conversations SET session_id=? WHERE id=?", (sid, cid))
+            else:
+                c.execute("UPDATE conversations SET client_key=? WHERE id=?", (key, cid))
+            c.execute("UPDATE conversations SET calls=(SELECT COUNT(*) FROM calls k WHERE k.conv_id=conversations.id) WHERE id=?", (cid,))
+        elif new_conversation:
+            cid = _new_group(c, "explicit", now)
+        else:
+            cid = _conversation(c, now)
         sets, ps = ["updated=?"], [now]
         if title:
             sets.append("title=?"); ps.append(redact(title.strip(), 200))
         if summary:
             sets.append("summary=?"); ps.append(redact(summary.strip(), 4000))
         c.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id=?", ps + [cid])
-    return f"已保存到对话 #{cid}"
+        kind = c.execute("SELECT kind FROM conversations WHERE id=?", (cid,)).fetchone()[0]
+    tip = "" if sid else "（当前客户端未回传会话标识，分组按时间推断）"
+    return (f"已保存到分组 #{cid}（{KIND_TEXT.get(kind, kind)}）{tip}。"
+            f"在同一个聊天里之后再调用 history_note 时可传 conversation_id={cid}，保证记录归到同一组。")
 
 
 if history_init():
@@ -662,6 +741,14 @@ if history_init():
         mcp.tool(annotations=RO)(history_conversations)
         mcp.tool(annotations=RO)(history_calls)
 
+
+def _send_json(send, status: int, obj: dict):
+    async def go():
+        await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": json.dumps(obj).encode()})
+    return go()
+
+
 def with_auth(app):
     """只接受 /<TOKEN>/mcp 路径，或 /mcp + Authorization: Bearer <TOKEN>"""
     secret_prefix = f"/{TOKEN}"
@@ -669,24 +756,79 @@ def with_auth(app):
         if scope["type"] != "http":
             return await app(scope, receive, send)
         path = scope.get("path", "")
+        method = scope.get("method")
+        # OAuth 自动发现（如 Gemini 网页版）：ZERO 不使用 OAuth，安静地返回 404，客户端会改用链接里的 Token
+        if "/.well-known/" in path:
+            return await _send_json(send, 404, {"error": "not_found", "message": "ZERO 不使用 OAuth，请使用带 Token 的连接地址"})
         headers = dict(scope.get("headers") or [])
         bearer = headers.get(b"authorization", b"").decode()
         if path.startswith(secret_prefix + "/"):
             scope = dict(scope, path=path[len(secret_prefix):])
         elif bearer != f"Bearer {TOKEN}":
-            log(f"拒绝未授权请求 {scope.get('method')} {'/'.join(path.split('/')[:2])}/…")
+            log(f"拒绝未授权请求 {method} {'/'.join(path.split('/')[:2])}/…")
             await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"text/plain")]})
             return await send({"type": "http.response.body", "body": b"unauthorized"})
         ua = headers.get(b"user-agent", b"").decode(errors="replace")[:200]
-        REQ_INFO.set({"ua": ua})
-        if HISTORY_DB and scope.get("method") == "POST":
-            receive = await _sniff_initialize(receive, ua)
-        return await app(scope, receive, send)
+        sid = headers.get(b"mcp-session-id", b"").decode(errors="replace")[:64]
+        info = {"ua": ua, "sid": sid if sid.startswith(SID_PREFIX) else "", "call": None, "recorded": False}
+        REQ_INFO.set(info)
+        if not HISTORY_DB:
+            return await app(scope, receive, send)
+        if method == "DELETE" and info["sid"]:     # 客户端结束会话
+            return await _send_json(send, 200, {"ok": True})
+        if method != "POST":
+            return await app(scope, receive, send)
+        receive = await _sniff(receive, info)
+        if info.get("init"):    # 新会话：签发 ZERO 自己的会话标识，支持的客户端会在后续请求中回传
+            info["sid"] = SID_PREFIX + uuid.uuid4().hex[:16]
+            SID_NAMES[info["sid"]] = info["init"]
+            log(f"客户端连接：{info['init']} · 会话 {info['sid'][3:9]}")
+            send = _with_session_header(send, info["sid"])
+        elif info["sid"] and info["sid"] not in SID_NAMES and ua in CLIENT_NAMES:
+            SID_NAMES[info["sid"]] = CLIENT_NAMES[ua]   # ZERO 重启后客户端继续使用旧会话
+        resp = {"status": 0, "body": b""}
+        t0 = time.time()
+        await app(scope, receive, _capture(send, resp))
+        call = info.get("call")
+        if call and not info["recorded"] and not call[0].startswith("history_"):
+            history_record(call[0], call[1], "调用未执行（参数校验失败或工具不存在）：" + _error_text(resp), False,
+                           int((time.time() - t0) * 1000))
     return wrapped
 
 
-async def _sniff_initialize(receive, ua: str):
-    """读取请求体，若是 initialize 则记下客户端名称（clientInfo），再把请求体原样交给 MCP"""
+def _with_session_header(send, sid: str):
+    async def s(m):
+        if m["type"] == "http.response.start" and m.get("status", 200) < 300:
+            m = dict(m, headers=list(m.get("headers") or []) + [(b"mcp-session-id", sid.encode())])
+        await send(m)
+    return s
+
+
+def _capture(send, resp: dict):
+    """记下响应状态和响应体前 8KB（用于记录没有真正执行的工具调用）"""
+    async def s(m):
+        if m["type"] == "http.response.start":
+            resp["status"] = m.get("status", 0)
+        elif m["type"] == "http.response.body" and len(resp["body"]) < 8192:
+            resp["body"] += m.get("body", b"")[:8192]
+        await send(m)
+    return s
+
+
+def _error_text(resp: dict) -> str:
+    try:
+        d = json.loads(resp["body"])
+        d = d[0] if isinstance(d, list) else d
+        if d.get("error"):
+            return str(d["error"].get("message", d["error"]))[:1000]
+        content = (d.get("result") or {}).get("content") or []
+        return " ".join(x.get("text", "") for x in content if isinstance(x, dict))[:1000] or f"HTTP {resp['status']}"
+    except Exception:
+        return f"HTTP {resp['status']}"
+
+
+async def _sniff(receive, info: dict):
+    """读取请求体：initialize 记下客户端名称（clientInfo），tools/call 记下工具名和参数，再把请求体原样交给 MCP"""
     msgs, body = [], b""
     while True:
         m = await receive()
@@ -694,19 +836,21 @@ async def _sniff_initialize(receive, ua: str):
         if m["type"] != "http.request":
             break
         body += m.get("body", b"")
-        if not m.get("more_body") or len(body) > 65536:
+        if not m.get("more_body") or len(body) > 262144:
             break
-    if b'"initialize"' in body[:65536]:
+    if b'"initialize"' in body[:65536] or b'"tools/call"' in body[:65536]:
         try:
             data = json.loads(body)
             for d in (data if isinstance(data, list) else [data]):
+                p = d.get("params") or {}
                 if d.get("method") == "initialize":
-                    ci = (d.get("params") or {}).get("clientInfo") or {}
-                    name = " ".join(x for x in (ci.get("name"), ci.get("version")) if x)[:60]
-                    if name:
-                        if CLIENT_NAMES.get(ua) != name:
-                            log(f"客户端连接：{name}")
-                        CLIENT_NAMES[ua] = name
+                    ci = p.get("clientInfo") or {}
+                    name = " ".join(x for x in (ci.get("name"), ci.get("version")) if x)[:60] or "未知客户端"
+                    CLIENT_NAMES[info["ua"]] = name
+                    info["init"] = name
+                elif d.get("method") == "tools/call" and isinstance(p.get("name"), str):
+                    args = p.get("arguments")
+                    info["call"] = (p["name"][:80], args if isinstance(args, dict) else {"arguments": args})
         except Exception:
             pass
 

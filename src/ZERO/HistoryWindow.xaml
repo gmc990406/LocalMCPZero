@@ -220,6 +220,8 @@
                                                    TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                     <StackPanel x:Name="ConvActions" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="10,2,0,0">
+                                        <Button x:Name="BtnMerge" Style="{StaticResource SecondaryButton}" Content="合并到上一组" Margin="0,0,6,0"
+                                                ToolTip="把这一组并入同一客户端的上一组（同一个聊天被误拆开时使用）" Click="Merge_Click"/>
                                         <Button x:Name="BtnPin" Style="{StaticResource IconButton}" ToolTip="置顶（不会被自动清理）" Click="Pin_Click">
                                             <Path x:Name="PinIcon" Style="{StaticResource IconPath}" Data="{StaticResource IcoPin}"/>
                                         </Button>
@@ -325,6 +327,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="SettingHint" Text="开关修改后，重新启动服务生效" FontSize="11.5" Foreground="{StaticResource TextTertiary}"
                                    VerticalAlignment="Center" Margin="0,0,12,0" Visibility="Collapsed"/>
+                        <Button x:Name="BtnDataDir" Style="{StaticResource SecondaryButton}" Content="数据文件夹" Margin="0,0,8,0" Click="DataDir_Click"/>
                         <Button Style="{StaticResource SecondaryButton}" Content="清空历史" Click="ClearAll_Click"/>
                     </StackPanel>
                 </Grid>

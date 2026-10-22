@@ -96,7 +96,8 @@
 ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOCALAPPDATA%\ZERO\history.db`），**不同 AI（Notion AI、Claude、Gemini…）的操作都汇总在一起**，任何一个 AI 都能接着看之前做过什么。
 
 - **按对话 / 按工具** 两种方式浏览：主界面点「历史记录」打开。
-- **自动分组**：按客户端名称区分；同一客户端 30 分钟内的操作算作一个对话。AI 也可以用 `history_note(new_conversation=true)` 主动开始新对话；分错了可以在界面里「从这里拆分」。
+- **自动分组**：ZERO 会给每次 MCP 连接签发会话标识（`Mcp-Session-Id`），回传该标识的客户端按 **MCP 会话** 分组；不回传的客户端按「同一客户端 + 30 分钟内」**推断**分组，界面会标注「推断」。AI 可以用 `history_note(new_conversation=true)` 新开一组，或用 `history_note(conversation_id=编号)` 接回同一个聊天之前的组；分错了可以在界面里「从这里拆分」或「合并到上一组」。参数校验失败、工具不存在等没有真正执行的调用也会记录为失败。
+- **跟着电脑走**：历史和设置保存在当前 Windows 用户的 `%LOCALAPPDATA%\ZERO\`，与程序位置无关——更新 ZERO、移动或重新下载 exe 都不会丢失；数据库升级前会自动备份为 `history.db.bak-v1`。历史窗口底部「数据文件夹」可直接打开该目录。
 - **可编辑**：对话标题、摘要、每条记录的备注都可以修改（AI 查看历史时会读到这些内容）；可删除单条记录或整个对话，可置顶。
 - **自动清理**：默认保留 30 天（可选 7 / 30 / 90 天或永久），置顶的对话不会被清理。
 - **自动脱敏**：Token、密码、密钥（`password=…`、`Bearer …`、`ghp_…`、`sk-…` 等）在写入前替换为 `***`；超长参数和结果会截断。
@@ -247,7 +248,8 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 ZERO records every tool call made on this PC to a local database (`%LOCALAPPDATA%\ZERO\history.db`). **Calls from different AI clients (Notion AI, Claude, Gemini…) are kept together**, so any AI can pick up where another left off.
 
 - **Browse by conversation or by tool**: click "历史记录" (History) in the main window.
-- **Automatic grouping**: by client name; calls from the same client within 30 minutes form one conversation. An AI can start a new one with `history_note(new_conversation=true)`, and you can split a conversation manually in the UI.
+- **Automatic grouping**: ZERO issues an `Mcp-Session-Id` on every MCP connection. Clients that echo it are grouped by **MCP session**; others are grouped by *inferred* activity (same client within 30 minutes), marked "推断" in the UI. An AI can start a new group with `history_note(new_conversation=true)` or reattach to an earlier group of the same chat with `history_note(conversation_id=N)`; you can split or merge groups in the UI. Calls rejected before running (validation errors, unknown tools) are recorded as failures too.
+- **Stays with the PC**: history and settings live in the current Windows user's `%LOCALAPPDATA%\ZERO\`, independent of where the exe is — updating, moving or re-downloading ZERO keeps them. The database is backed up to `history.db.bak-v1` before schema upgrades. Use "数据文件夹" (Data folder) at the bottom of the history window to open it.
 - **Editable**: conversation titles, summaries and per-call notes (AI clients read these); delete single calls or whole conversations; pin important ones.
 - **Retention**: 30 days by default (7 / 30 / 90 days or forever); pinned conversations are never cleaned up.
 - **Redaction**: tokens, passwords and keys (`password=…`, `Bearer …`, `ghp_…`, `sk-…`, etc.) are replaced with `***` before saving; long arguments and results are truncated.

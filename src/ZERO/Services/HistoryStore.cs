@@ -17,11 +17,18 @@ public sealed class ConversationItem
     public DateTime Updated { get; init; }
     public long Calls { get; init; }
     public bool Pinned { get; init; }
+    /// <summary>分组来源：session=MCP 会话，activity=按时间推断，explicit=AI 新建，manual=手动拆分，legacy=旧版（推断）</summary>
+    public string Kind { get; init; } = "legacy";
 
     public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? "未命名对话" : Title;
     public bool Untitled => string.IsNullOrWhiteSpace(Title);
     public bool HasSummary => !string.IsNullOrWhiteSpace(Summary);
-    public string Meta => $"{Client} · {HistoryStore.When(Updated)} · {Calls} 次操作";
+    public bool Inferred => Kind is "activity" or "legacy";
+    public string KindText => Kind switch
+    {
+        "session" => "MCP 会话", "activity" => "按时间推断", "explicit" => "AI 新建", "manual" => "手动拆分", _ => "旧版分组（推断）",
+    };
+    public string Meta => $"{Client} · {HistoryStore.When(Updated)} · {(Calls > 0 ? $"{Calls} 次操作" : "无操作")}{(Inferred ? " · 推断" : "")}";
     public string ModeText => Mode == "full" ? "全电脑访问" : "有限制";
     public string Range => Started.Date == Updated.Date
         ? $"{Started:yyyy-MM-dd HH:mm} – {Updated:HH:mm}"
@@ -82,7 +89,8 @@ public static class HistoryStore
     public static string DbPath { get; } =
         Environment.GetEnvironmentVariable("ZERO_HISTORY_DB") is { Length: > 0 } p ? p : Path.Combine(AppSettings.DataDir, "history.db");
 
-    // 与 server.py 中的 SCHEMA 保持一致
+    const int SchemaVersion = 2;
+    // 与 server.py 中的 SCHEMA / MIGRATE_V2 保持一致
     const string Schema = """
         CREATE TABLE IF NOT EXISTS conversations(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +107,14 @@ public static class HistoryStore
         CREATE INDEX IF NOT EXISTS ix_calls_tool ON calls(tool, ts);
         CREATE INDEX IF NOT EXISTS ix_conv_updated ON conversations(updated);
         """;
+    static readonly string[] MigrateV2 =
+    {
+        "ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'legacy'",
+        "ALTER TABLE conversations ADD COLUMN session_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE conversations ADD COLUMN client_ua TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE conversations ADD COLUMN upstream_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE calls ADD COLUMN session_id TEXT NOT NULL DEFAULT ''",
+    };
 
     static bool _ready;
 
@@ -114,10 +130,41 @@ public static class HistoryStore
         if (!_ready)
         {
             Exec(c, "PRAGMA journal_mode=WAL;");
-            Exec(c, Schema);
+            Migrate(c);
             _ready = true;
         }
         return c;
+    }
+
+    static long Scalar(SqliteConnection c, string sql)
+    {
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = sql;
+        return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
+    }
+
+    /// <summary>升级数据库结构：先把旧库完整备份为 history.db.bak-v1（只备份一次），只加列、不删数据。</summary>
+    static void Migrate(SqliteConnection c)
+    {
+        if (Scalar(c, "PRAGMA user_version") >= SchemaVersion) return;
+        var old = Scalar(c, "SELECT COUNT(*) FROM sqlite_master WHERE name='conversations'") > 0;
+        var hasKind = old && Scalar(c, "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name='kind'") > 0;
+        var bak = DbPath + ".bak-v1";
+        if (old && !hasKind && !File.Exists(bak))
+        {
+            using var b = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = bak, Pooling = false }.ToString());
+            b.Open();
+            c.BackupDatabase(b);
+            AppLog.Write("历史", $"历史库升级前已备份：{bak}");
+        }
+        Exec(c, Schema);
+        foreach (var sql in MigrateV2)
+        {
+            try { Exec(c, sql); }
+            catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) { }
+        }
+        Exec(c, "CREATE INDEX IF NOT EXISTS ix_conv_session ON conversations(session_id);");
+        Exec(c, $"PRAGMA user_version={SchemaVersion};");
     }
 
     static void Exec(SqliteConnection c, string sql, params (string, object)[] ps)
@@ -148,7 +195,7 @@ public static class HistoryStore
         var list = new List<ConversationItem>();
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT id, mode, client, title, summary, started, updated, calls, pinned FROM conversations v" +
+        cmd.CommandText = "SELECT id, mode, client, title, summary, started, updated, calls, pinned, kind FROM conversations v" +
                           (string.IsNullOrWhiteSpace(query) ? "" : " WHERE " + SearchCond) +
                           " ORDER BY pinned DESC, updated DESC LIMIT 500";
         cmd.Parameters.AddWithValue("$q", $"%{query.Trim()}%");
@@ -158,6 +205,7 @@ public static class HistoryStore
             {
                 Id = r.GetInt64(0), Mode = r.GetString(1), Client = r.GetString(2), Title = r.GetString(3), Summary = r.GetString(4),
                 Started = ToLocal(r.GetDouble(5)), Updated = ToLocal(r.GetDouble(6)), Calls = r.GetInt64(7), Pinned = r.GetInt64(8) != 0,
+                Kind = r.GetString(9),
             });
         return list;
     }
@@ -243,8 +291,8 @@ public static class HistoryStore
         using (var cmd = c.CreateCommand())
         {
             cmd.CommandText = """
-                INSERT INTO conversations(mode, client, client_key, title, summary, started, updated, calls, pinned)
-                SELECT v.mode, v.client, v.client_key, '', '', k.ts, v.updated, 0, 0
+                INSERT INTO conversations(mode, client, client_key, title, summary, started, updated, calls, pinned, kind, client_ua)
+                SELECT v.mode, v.client, v.client_key, '', '', k.ts, v.updated, 0, 0, 'manual', v.client_ua
                 FROM calls k JOIN conversations v ON v.id=k.conv_id WHERE k.id=$id;
                 SELECT last_insert_rowid();
                 """;
@@ -260,6 +308,42 @@ public static class HistoryStore
         return newId;
     }
 
+    /// <summary>同一客户端、同一访问模式下时间上紧挨着的上一组（用于合并被误拆开的记录）。</summary>
+    public static ConversationItem? Previous(ConversationItem conv)
+    {
+        using var c = Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT id, title FROM conversations WHERE mode=$m AND client=$cl AND id!=$id AND started<=$s ORDER BY started DESC LIMIT 1";
+        cmd.Parameters.AddWithValue("$m", conv.Mode);
+        cmd.Parameters.AddWithValue("$cl", conv.Client);
+        cmd.Parameters.AddWithValue("$id", conv.Id);
+        cmd.Parameters.AddWithValue("$s", conv.Started.ToUniversalTime().Subtract(DateTime.UnixEpoch).TotalSeconds);
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? new ConversationItem { Id = r.GetInt64(0), Title = r.GetString(1) } : null;
+    }
+
+    /// <summary>把 from 组的记录并入 into 组：标题/摘要为空时沿用 from 的，会话标识一并转移，然后删除 from 组。</summary>
+    public static void Merge(long from, long into)
+    {
+        using var c = Open();
+        using var tx = c.BeginTransaction();
+        Exec(c, "UPDATE calls SET conv_id=$i WHERE conv_id=$f", ("$i", into), ("$f", from));
+        Exec(c, """
+            UPDATE conversations SET
+              title=CASE WHEN title='' THEN (SELECT title FROM conversations WHERE id=$f) ELSE title END,
+              summary=CASE WHEN summary='' THEN (SELECT summary FROM conversations WHERE id=$f)
+                           WHEN (SELECT summary FROM conversations WHERE id=$f)='' THEN summary
+                           ELSE summary || char(10) || (SELECT summary FROM conversations WHERE id=$f) END,
+              session_id=CASE WHEN (SELECT session_id FROM conversations WHERE id=$f)!='' THEN (SELECT session_id FROM conversations WHERE id=$f) ELSE session_id END,
+              pinned=MAX(pinned, (SELECT pinned FROM conversations WHERE id=$f)),
+              started=MIN(started, (SELECT started FROM conversations WHERE id=$f))
+            WHERE id=$i;
+            """, ("$i", into), ("$f", from));
+        Exec(c, "DELETE FROM conversations WHERE id=$f", ("$f", from));
+        RecountAll(c);
+        tx.Commit();
+    }
+
     static void RecountAll(SqliteConnection c) => Exec(c, """
         UPDATE conversations SET calls=(SELECT COUNT(*) FROM calls k WHERE k.conv_id=conversations.id),
           updated=COALESCE((SELECT MAX(ts) FROM calls k WHERE k.conv_id=conversations.id), updated);
@@ -273,7 +357,10 @@ public static class HistoryStore
         using var cmd = c.CreateCommand();
         cmd.CommandText = "DELETE FROM conversations WHERE pinned=0 AND updated < $t";
         cmd.Parameters.AddWithValue("$t", Now - days * 86400.0);
-        return cmd.ExecuteNonQuery();
+        var n = cmd.ExecuteNonQuery();
+        // 只建立了分组、却没有任何操作和标题的空组，一天后清理
+        Exec(c, "DELETE FROM conversations WHERE calls=0 AND title='' AND summary='' AND pinned=0 AND updated < $t", ("$t", Now - 86400.0));
+        return n;
     }
 
     public static void ClearAll(bool keepPinned)
