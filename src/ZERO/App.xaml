@@ -169,6 +169,30 @@
             </Setter>
         </Style>
 
+        <!-- 开关（macOS 风格），开启时为红色以提示风险 -->
+        <Style x:Key="Switch" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Width="38" Height="22" Background="Transparent">
+                            <Border x:Name="track" CornerRadius="11" Background="#D1D1D6"/>
+                            <Ellipse x:Name="knob" Width="18" Height="18" Fill="White" HorizontalAlignment="Left" Margin="2,0,0,0"
+                                     Effect="{StaticResource KnobShadow}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="track" Property="Background" Value="{StaticResource Red}"/>
+                                <Setter TargetName="knob" Property="Margin" Value="18,0,0,0"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="Field" TargetType="TextBox">
             <Setter Property="IsReadOnly" Value="True"/>
             <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>

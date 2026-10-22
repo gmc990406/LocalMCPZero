@@ -12,6 +12,7 @@ public sealed class AppSettings
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "ZERO-Workspace");
     public string Token { get; set; } = "";
     public int Port { get; set; } = 8766;
+    public bool Trust { get; set; }                            // 免确认模式（仅全电脑访问有效，默认关闭）
     public bool TrayHintShown { get; set; }
 
     public static string DataDir { get; } =

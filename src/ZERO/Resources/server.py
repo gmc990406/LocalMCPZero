@@ -1,7 +1,9 @@
 """
 ZERO - 本地 MCP 服务（可接入任意支持 MCP 的 AI 客户端）
 MCP_MODE=restricted : 只允许在 MCP_WORKSPACE 内读写文件，禁用命令/后台任务
-MCP_MODE=full       : 全电脑访问（文件 + 命令 + 后台任务 + 截屏）
+MCP_MODE=full       : 全电脑访问（文件 + 命令 + 后台任务 + 截屏 + 系统信息）
+MCP_TRUST=1         : 免确认模式（仅全电脑访问模式有效）：把所有工具声明为只读/无破坏性，
+                      支持 MCP 注解的 AI 客户端将不再弹出确认框。默认关闭，风险自负。
 """
 import asyncio, os, re, subprocess, sys, time, uuid
 from pathlib import Path
@@ -14,6 +16,7 @@ from mcp.types import ToolAnnotations
 TOKEN = os.environ.get("MCP_TOKEN", "").strip()
 MODE = os.environ.get("MCP_MODE", "restricted").strip().lower()
 FULL = MODE == "full"
+TRUST = FULL and os.environ.get("MCP_TRUST", "").strip() == "1"
 WORKSPACE = Path(os.environ.get("MCP_WORKSPACE") or (Path.home() / "ZERO-Workspace")).resolve()
 PORT = int(os.environ.get("MCP_PORT", "8766"))
 JOB_DIR = Path(os.environ.get("MCP_JOBDIR") or (WORKSPACE / ".mcp_jobs")).resolve()
@@ -36,15 +39,19 @@ def log(msg: str):
 
 mcp = FastMCP(
     "ZERO",
-    instructions=(f"操作用户本地电脑（全电脑访问模式），相对路径基于 {BASE}，也可用绝对路径。可用 screenshot 截取桌面，用 run_command 执行 PowerShell 命令。" if FULL
+    instructions=(f"操作用户本地电脑（全电脑访问模式），相对路径基于 {BASE}，也可用绝对路径。可用 system_info 查看本机概况、list_processes 查看进程、screenshot 截取桌面，用 run_command 执行 PowerShell 命令。" if FULL
                   else f"只能读写工作目录 {WORKSPACE} 内的文件，命令执行已禁用。"),
     stateless_http=True,
     log_level="WARNING",
     json_response=True,
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
-RO = ToolAnnotations(readOnlyHint=True)
-RW = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
+# 工具注解（MCP 规范中的“提示”，由 AI 客户端决定是否据此弹出确认框）
+#   RO：真正只读的工具，如实声明
+#   RW：会修改电脑的工具。默认如实声明为“有破坏性”；免确认模式下按用户选择声明为只读
+RO = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+RW = (ToolAnnotations(readOnlyHint=True, destructiveHint=False) if TRUST
+      else ToolAnnotations(readOnlyHint=False, destructiveHint=True))
 
 
 def safe_path(p: str) -> Path:
@@ -313,7 +320,87 @@ async def screenshot(monitor: int = 0, max_width: int = 1600):
     return [Image(data=png, format="png"), f"截图已保存：{path}（{info}，{len(png) // 1024} KB）"]
 
 
+
+# ---------------- 系统信息（仅全电脑模式，真正只读） ----------------
+def system_info() -> str:
+    """查看本机概况：系统版本、主机名、用户、CPU、内存、磁盘、IP 地址、开机时长、显示器数量。只读，不修改任何内容。"""
+    import platform, shutil, socket
+    lines = [f"系统：{platform.platform()}（{platform.machine()}）",
+             f"主机名：{socket.gethostname()}    用户：{os.environ.get('USERNAME') or os.environ.get('USER', '')}",
+             f"CPU：{platform.processor() or '未知'}，{os.cpu_count()} 个逻辑核心"]
+    if IS_WIN:
+        import ctypes
+        class MEM(ctypes.Structure):
+            _fields_ = [("len", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong),
+                        ("avail", ctypes.c_ulonglong), ("tp", ctypes.c_ulonglong), ("ap", ctypes.c_ulonglong),
+                        ("tv", ctypes.c_ulonglong), ("av", ctypes.c_ulonglong), ("ext", ctypes.c_ulonglong)]
+        m = MEM(); m.len = ctypes.sizeof(MEM)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+            lines.append(f"内存：已用 {(m.total - m.avail) / 2**30:.1f} / {m.total / 2**30:.1f} GB（{m.load}%）")
+        ctypes.windll.kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+        up = ctypes.windll.kernel32.GetTickCount64() // 1000
+        lines.append(f"开机时长：{up // 86400} 天 {up % 86400 // 3600} 小时 {up % 3600 // 60} 分钟")
+        lines.append(f"显示器：{ctypes.windll.user32.GetSystemMetrics(80)} 个，主屏 "
+                     f"{ctypes.windll.user32.GetSystemMetrics(0)}x{ctypes.windll.user32.GetSystemMetrics(1)}（逻辑像素）")
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        drives = [f"{chr(65 + i)}:\\" for i in range(26) if mask >> i & 1]
+    else:
+        drives = ["/"]
+    for d in drives:
+        try:
+            u = shutil.disk_usage(d)
+            lines.append(f"磁盘 {d}  可用 {u.free / 2**30:.1f} GB / 共 {u.total / 2**30:.1f} GB")
+        except OSError:
+            pass
+    ips = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            sk.connect(("8.8.8.8", 80))   # 不会真正发包，只用于确定默认出口网卡
+            ips.add(sk.getsockname()[0] + "（默认出口）")
+    except OSError:
+        pass
+    lines.append("IPv4：" + ("、".join(sorted(ips)) or "未知"))
+    lines.append(f"Python：{sys.version.split()[0]}    ZERO 模式：全电脑访问{' · 免确认' if TRUST else ''}")
+    return "\n".join(lines)
+
+
+def list_processes(name_filter: str = "", max_items: int = 60) -> str:
+    """列出正在运行的进程（按内存占用从高到低）。name_filter 按进程名模糊过滤（不区分大小写）。只读，不会结束任何进程。"""
+    import csv, io
+    max_items = max(1, min(int(max_items), 500))
+    if IS_WIN:
+        r = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, timeout=30,
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+        text = r.stdout.decode("mbcs", errors="replace")
+        rows = []
+        for row in csv.reader(io.StringIO(text)):
+            if len(row) >= 5:
+                mem = int(re.sub(r"[^0-9]", "", row[4]) or 0)
+                rows.append((row[0], row[1], row[2], mem))
+    else:
+        r = subprocess.run(["ps", "-eo", "comm=,pid=,rss="], capture_output=True, timeout=30)
+        rows = []
+        for ln in r.stdout.decode(errors="replace").splitlines():
+            parts = ln.split()
+            if len(parts) >= 3:
+                rows.append((parts[0], parts[1], "", int(parts[2])))
+    if name_filter:
+        rows = [x for x in rows if name_filter.lower() in x[0].lower()]
+    rows.sort(key=lambda x: -x[3])
+    total = len(rows)
+    out = [f"{'进程名':<32}{'PID':>8}  {'内存(MB)':>9}"]
+    out += [f"{n[:31]:<32}{pid:>8}  {mem / 1024:>9.1f}" for n, pid, _, mem in rows[:max_items]]
+    return "\n".join(out) + (f"\n…共 {total} 个，仅显示前 {max_items} 个" if total > max_items else f"\n共 {total} 个")
+
+
 if FULL:
+    mcp.tool(annotations=RO)(system_info)
+    mcp.tool(annotations=RO)(list_processes)
     mcp.tool(annotations=RO)(screenshot)
     mcp.tool(annotations=RW)(run_command)
     mcp.tool(annotations=RW)(start_job)
@@ -342,6 +429,8 @@ def with_auth(app):
 
 if __name__ == "__main__":
     log(f"模式：{'全电脑访问' if FULL else '有限制（仅工作目录文件）'}")
+    if TRUST:
+        log("⚠ 免确认模式已开启：所有工具都声明为只读，AI 客户端可能不再请求确认")
     log(f"{'相对路径基准' if FULL else '工作目录'}：{BASE}")
     log(f"已启用工具：{', '.join(sorted(t.name for t in mcp._tool_manager.list_tools()))}")
     log(f"监听 http://127.0.0.1:{PORT}/<token>/mcp")

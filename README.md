@@ -83,14 +83,35 @@
 | `search_files` | ✅ | ✅ | 正则全文搜索 |
 | `write_file` / `edit_file` | ✅ | ✅ | 新建、覆盖或精确替换文本 |
 | `make_dir` | ✅ | ✅ | 创建目录 |
+| `system_info` | — | ✅ | 系统、CPU、内存、磁盘、IP 等本机概况（只读） |
+| `list_processes` | — | ✅ | 进程列表，按内存排序（只读） |
 | `run_command` | — | ✅ | 执行 PowerShell 命令（≤ 120 秒） |
 | `start_job` / `job_status` / `list_jobs` / `stop_job` | — | ✅ | 后台长任务（编译、开发服务器等） |
 | `screenshot` | — | ✅ | 截取桌面并以图片返回 |
+
+### 🔕 免确认模式
+
+很多 AI 客户端（如 Gemini、Claude、Notion AI）在调用会修改电脑的工具前会弹出「允许 / 拒绝」确认框。这是因为 ZERO 按照 MCP 规范，**如实**把 `run_command`、`write_file` 等工具标记为 `destructiveHint: true`。
+
+如果你觉得频繁确认很麻烦，可以在「全电脑访问」模式下打开 **免确认模式** 开关（默认关闭）：
+
+| | 默认 | 免确认模式 |
+|---|---|---|
+| 只读工具（读文件、截图、系统信息…） | `readOnlyHint: true` | `readOnlyHint: true` |
+| 修改类工具（命令、写文件、后台任务…） | `readOnlyHint: false`, `destructiveHint: true` | `readOnlyHint: true`, `destructiveHint: false` |
+
+- 开关只在服务**停止**时可切换，下次启动生效；切换后需要在 AI 客户端中**重新连接**，让它重新读取工具信息。
+- 是否真的跳过确认由 AI 客户端决定，部分客户端会忽略这些提示。
+- 「有限制」模式不受此开关影响。
+- 不需要执行命令时，优先使用 `system_info`、`list_processes` 等真正只读的工具，它们默认就不需要确认。
+
+> ⚠️ 开启后，如果 AI 读到网页、文件或邮件里隐藏的恶意指令（提示注入），可能在你不知情的情况下执行危险命令。请只在你信任的对话中开启，用完及时关闭。
 
 ### ⚠️ 安全须知
 
 - **MCP 地址 = 钥匙。** 在「全电脑访问」模式下，拿到地址的人可以以当前用户身份完全控制这台电脑。不要截图、不要分享；怀疑泄露请立即点 Token 旁的 🔄 重新生成。
 - 软件配置目录（含 Token）受保护，AI 无法通过 MCP 读取。
+- 「免确认模式」会让 AI 直接执行命令而不经你确认，默认关闭，请谨慎开启。
 - 不用时请点击「停止」或退出软件，隧道会随之关闭。
 
 ### 常见问题
@@ -194,14 +215,35 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 | `search_files` | ✅ | ✅ | Regex full-text search |
 | `write_file` / `edit_file` | ✅ | ✅ | Create, overwrite or precisely edit text |
 | `make_dir` | ✅ | ✅ | Create a directory |
+| `system_info` | — | ✅ | OS, CPU, memory, disks, IP and uptime (read-only) |
+| `list_processes` | — | ✅ | Running processes sorted by memory (read-only) |
 | `run_command` | — | ✅ | Run a PowerShell command (≤ 120 s) |
 | `start_job` / `job_status` / `list_jobs` / `stop_job` | — | ✅ | Long-running background jobs |
 | `screenshot` | — | ✅ | Capture the desktop and return it as an image |
+
+### 🔕 No-confirmation mode
+
+Many AI clients (Gemini, Claude, Notion AI, …) show an "Allow / Deny" prompt before calling tools that can change your computer. That's because ZERO **honestly** marks tools such as `run_command` and `write_file` with `destructiveHint: true`, as the MCP spec intends.
+
+If the prompts get in your way, turn on **No-confirmation mode** (off by default, full-access mode only):
+
+| | Default | No-confirmation mode |
+|---|---|---|
+| Read-only tools (read files, screenshot, system info…) | `readOnlyHint: true` | `readOnlyHint: true` |
+| Modifying tools (commands, file writes, jobs…) | `readOnlyHint: false`, `destructiveHint: true` | `readOnlyHint: true`, `destructiveHint: false` |
+
+- The switch can only be changed while the service is **stopped** and applies on the next start. **Reconnect** your AI client afterwards so it re-reads the tool list.
+- Whether prompts are actually skipped is up to the client — some ignore these hints.
+- Restricted mode is never affected.
+- For inspection tasks, prefer genuinely read-only tools like `system_info` and `list_processes`, which never need confirmation.
+
+> ⚠️ With this mode on, a prompt injection hidden in a web page, file or email could make the AI run dangerous commands without asking you. Only enable it in conversations you trust, and turn it off afterwards.
 
 ### ⚠️ Security
 
 - **The MCP URL is a key.** In full-access mode, anyone who has it can fully control this PC as the current user. Never share it; click 🔄 next to the Token field if you suspect a leak.
 - ZERO's own config folder (where the token lives) is protected from MCP access.
+- No-confirmation mode lets the AI run commands without asking you. It's off by default — enable it with care.
 - Click **Stop** or quit the app when you don't need it — the tunnel closes with it.
 
 ### FAQ
@@ -256,7 +298,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
         ▼
  Cloudflare Quick Tunnel ──► cloudflared ──► 127.0.0.1:8766
                                               └─ server.py  (FastMCP · Streamable HTTP)
-                                                   ├─ file tools
+                                                   ├─ file tools · system_info · list_processes
                                                    ├─ PowerShell / background jobs
                                                    └─ screenshot (GDI)
 ```
@@ -273,6 +315,7 @@ python src\ZERO\Resources\server.py
 |---|---|
 | `MCP_TOKEN` | 访问密钥（≥ 24 位） · Access token (24+ chars) |
 | `MCP_MODE` | `restricted` / `full` |
+| `MCP_TRUST` | `1` = 免确认模式（仅 `full` 有效） · no-confirmation mode (`full` only) |
 | `MCP_WORKSPACE` | 有限制模式的工作目录 · Workspace for restricted mode |
 | `MCP_PORT` | 本地端口，默认 8766 · Local port (default 8766) |
 | `MCP_JOBDIR` | 后台任务日志目录 · Background job log folder |

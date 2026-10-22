@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         ModeRestricted.IsChecked = _settings.Mode != "full";
         ModeFull.IsChecked = _settings.Mode == "full";
         WorkspaceBox.Text = _settings.Workspace;
+        TrustSwitch.IsChecked = _settings.Trust;
         _loadingUi = false;
         UpdateModeUi();
         RefreshConnectionFields();
@@ -318,6 +319,7 @@ public partial class MainWindow : Window
         {
             ["MCP_TOKEN"] = _settings.Token,
             ["MCP_MODE"] = _settings.Mode,
+            ["MCP_TRUST"] = full && _settings.Trust ? "1" : "0",
             ["MCP_WORKSPACE"] = ws,
             ["MCP_PORT"] = _port.ToString(),
             ["MCP_JOBDIR"] = jobDir,
@@ -440,7 +442,7 @@ public partial class MainWindow : Window
         AppLog.Write("状态", sub == null ? st.ToString() : $"{st}：{sub}");
         _state = st;
         bool busy = st is State.Running or State.Starting;
-        ModeRestricted.IsEnabled = ModeFull.IsEnabled = BtnBrowse.IsEnabled = !busy;
+        ModeRestricted.IsEnabled = ModeFull.IsEnabled = BtnBrowse.IsEnabled = TrustSwitch.IsEnabled = !busy;
         string color; string title;
         switch (st)
         {
@@ -450,7 +452,8 @@ public partial class MainWindow : Window
                 BtnToggle.Background = (Brush)FindResource("Red"); break;
             case State.Running:
                 color = "Green"; title = "运行中";
-                sub = (ModeFull.IsChecked == true ? "全电脑访问" : $"有限制 · {WorkspaceBox.Text}") + " · 复制 MCP 地址到 AI 客户端即可连接";
+                sub = (ModeFull.IsChecked == true ? (_settings.Trust ? "全电脑访问 · 免确认" : "全电脑访问") : $"有限制 · {WorkspaceBox.Text}")
+                      + " · 复制 MCP 地址到 AI 客户端即可连接";
                 ToggleText.Text = "停止"; SetToggleIcon("IcoStop", true);
                 BtnToggle.Background = (Brush)FindResource("Red"); break;
             case State.Error:
@@ -497,6 +500,8 @@ public partial class MainWindow : Window
     {
         bool full = ModeFull.IsChecked == true;
         WorkspacePanel.Visibility = full ? Visibility.Collapsed : Visibility.Visible;
+        TrustPanel.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
+        UpdateTrustUi();
         if (full)
         {
             ModeHintBox.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF4, 0xE5));
@@ -509,6 +514,40 @@ public partial class MainWindow : Window
             ModeHintIcon.Data = (Geometry)FindResource("IcoInfo"); ModeHintIcon.Stroke = (Brush)FindResource("Accent");
             ModeHint.Text = "只能读写下方工作空间里的文件，命令执行和后台任务全部禁用。";
         }
+    }
+
+    void UpdateTrustUi()
+    {
+        bool on = TrustSwitch.IsChecked == true;
+        TrustPanel.Background = new SolidColorBrush(on ? Color.FromRgb(0xFF, 0xEE, 0xED) : Color.FromRgb(0xF5, 0xF5, 0xF7));
+        TrustHint.Foreground = on ? (Brush)FindResource("Red") : (Brush)FindResource("TextSecondary");
+        TrustHint.Text = on
+            ? "已开启：AI 执行命令、修改文件时将不再请求你确认（取决于 AI 客户端）。请只在你信任的对话中使用。"
+            : "开启后，支持 MCP 注解的 AI 客户端执行命令、修改文件时不再弹出确认框。";
+    }
+
+    void Trust_Changed(object s, RoutedEventArgs e)
+    {
+        if (_loadingUi) return;
+        bool on = TrustSwitch.IsChecked == true;
+        if (on)
+        {
+            var r = MessageBox.Show(this,
+                "开启免确认模式后，ZERO 会把所有工具（包括执行命令、写入和删除文件）声明为「只读」，" +
+                "支持该声明的 AI 客户端将不再弹出确认框，直接执行操作。\n\n" +
+                "如果 AI 读到了网页、文件或邮件中隐藏的恶意指令，可能在你不知情的情况下删除文件或执行危险命令。\n\n" +
+                "确定开启吗？",
+                "开启免确认模式", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+            if (r != MessageBoxResult.OK)
+            {
+                _loadingUi = true; TrustSwitch.IsChecked = false; _loadingUi = false;
+                return;
+            }
+        }
+        _settings.Trust = on;
+        _settings.Save();
+        AppLog.Write("设置", on ? "免确认模式：开启" : "免确认模式：关闭");
+        UpdateTrustUi();
     }
 
     void BtnBrowse_Click(object s, RoutedEventArgs e)

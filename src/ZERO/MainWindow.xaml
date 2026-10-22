@@ -111,6 +111,22 @@
                                                Foreground="#3A3A3C"/>
                                 </Grid>
                             </Border>
+                            <!-- 免确认模式（仅全电脑访问） -->
+                            <Border x:Name="TrustPanel" CornerRadius="8" Padding="12,10" Margin="0,10,0,0" Background="#F5F5F7">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="免确认模式" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"/>
+                                        <TextBlock x:Name="TrustHint" FontSize="11.5" TextWrapping="Wrap" LineHeight="17" Margin="0,3,0,0"
+                                                   Foreground="{StaticResource TextSecondary}"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="TrustSwitch" Grid.Column="1" Style="{StaticResource Switch}" Margin="12,0,0,0"
+                                              VerticalAlignment="Center" Checked="Trust_Changed" Unchecked="Trust_Changed"/>
+                                </Grid>
+                            </Border>
                             <StackPanel x:Name="WorkspacePanel" Margin="0,14,0,0">
                                 <TextBlock Text="工作空间" Style="{StaticResource Caption}"/>
                                 <Grid Margin="0,8,0,0">
