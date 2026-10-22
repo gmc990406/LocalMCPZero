@@ -1,0 +1,60 @@
+<Window x:Class="ZERO.ZeroDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ZERO" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" ResizeMode="NoResize" FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType">
+    <!-- 应用内对话框：有主窗口时覆盖在主窗口上（暗色遮罩 + 居中卡片），否则单独显示卡片 -->
+    <Grid x:Name="Root">
+        <Border x:Name="Dim" CornerRadius="12" Background="#4D1C1C1E" Opacity="0"/>
+
+        <Border x:Name="Card" Width="440" Margin="28" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="{StaticResource CardBg}" CornerRadius="14" BorderBrush="#1A000000" BorderThickness="0.8"
+                Padding="24,22,24,20" RenderTransformOrigin="0.5,0.5" Opacity="0">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="40" ShadowDepth="10" Direction="270" Opacity="0.22" Color="#000000"/>
+            </Border.Effect>
+            <Border.RenderTransform>
+                <ScaleTransform x:Name="CardScale" ScaleX="0.95" ScaleY="0.95"/>
+            </Border.RenderTransform>
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="IconBadge" Width="40" Height="40" CornerRadius="11" VerticalAlignment="Top">
+                        <Path x:Name="IconGlyph" Width="20" Height="20" Stretch="Uniform" StrokeThickness="2"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" MinHeight="40">
+                        <TextBlock x:Name="TitleText" FontSize="15.5" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,1,0,0"/>
+                        <TextBlock x:Name="MessageText" FontSize="13" Foreground="{StaticResource TextSecondary}"
+                                   TextWrapping="Wrap" LineHeight="20" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Grid>
+
+                <Border x:Name="NoteBox" Margin="54,14,0,0" CornerRadius="8" Padding="12,10" BorderThickness="1" Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Path x:Name="NoteGlyph" Width="13" Height="13" Stretch="Uniform" StrokeThickness="1.8" VerticalAlignment="Top"
+                              Margin="0,3,8,0" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Data="{StaticResource IcoWarn}"/>
+                        <TextBlock x:Name="NoteText" Grid.Column="1" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
+                    </Grid>
+                </Border>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                    <Button x:Name="BtnCancel" Style="{StaticResource SecondaryButton}" MinWidth="92" Padding="16,7"
+                            FontSize="13" Margin="0,0,10,0" Click="Cancel_Click"/>
+                    <Button x:Name="BtnOk" Style="{StaticResource PrimaryButton}" MinWidth="92" Padding="18,7" Click="Ok_Click"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

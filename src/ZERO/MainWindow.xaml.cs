@@ -526,19 +526,26 @@ public partial class MainWindow : Window
             : "开启后，支持 MCP 注解的 AI 客户端执行命令、修改文件时不再弹出确认框。";
     }
 
+    // ---- 对话框文案（--snapshot-dialog 调试参数也会用到） ----
+    internal static readonly DialogSpec TrustPrompt = new(
+        "开启免确认模式？",
+        "ZERO 会把所有工具（包括执行命令、写入和删除文件）声明为「只读」，支持该声明的 AI 客户端将不再弹出确认框，直接执行操作。",
+        DialogKind.Danger, "仍要开启", "取消",
+        "如果 AI 读到网页、文件或邮件中隐藏的恶意指令，可能在你不知情时删除文件或执行危险命令。请只在你信任的对话中开启。");
+    internal static readonly DialogSpec StopFirstPrompt = new(
+        "请先停止服务", "服务运行中无法重新生成 Token，停止服务后再试。", DialogKind.Info, "好", null);
+    internal static readonly DialogSpec RegenPrompt = new(
+        "重新生成 Token？", "旧的 MCP 地址会立即失效，需要在 AI 客户端中更新连接。", DialogKind.Warning, "重新生成");
+    internal static readonly DialogSpec ExitPrompt = new(
+        "退出 ZERO？", "MCP 服务和隧道都会停止，AI 将无法再访问这台电脑。", DialogKind.Question, "退出");
+
     void Trust_Changed(object s, RoutedEventArgs e)
     {
         if (_loadingUi) return;
         bool on = TrustSwitch.IsChecked == true;
         if (on)
         {
-            var r = MessageBox.Show(this,
-                "开启免确认模式后，ZERO 会把所有工具（包括执行命令、写入和删除文件）声明为「只读」，" +
-                "支持该声明的 AI 客户端将不再弹出确认框，直接执行操作。\n\n" +
-                "如果 AI 读到了网页、文件或邮件中隐藏的恶意指令，可能在你不知情的情况下删除文件或执行危险命令。\n\n" +
-                "确定开启吗？",
-                "开启免确认模式", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
-            if (r != MessageBoxResult.OK)
+            if (!ZeroDialog.Show(this, TrustPrompt))
             {
                 _loadingUi = true; TrustSwitch.IsChecked = false; _loadingUi = false;
                 return;
@@ -609,12 +616,10 @@ public partial class MainWindow : Window
     {
         if (_state is State.Running or State.Starting)
         {
-            MessageBox.Show(this, "请先停止服务，再重新生成 Token。", "ZERO", MessageBoxButton.OK, MessageBoxImage.Information);
+            ZeroDialog.Show(this, StopFirstPrompt);
             return;
         }
-        var r = MessageBox.Show(this, "重新生成后，旧的 MCP 地址会立即失效，需要在 AI 客户端中更新连接。确定重新生成吗？",
-            "重新生成 Token", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (r != MessageBoxResult.OK) return;
+        if (!ZeroDialog.Show(this, RegenPrompt)) return;
         _settings.Token = AppSettings.NewToken();
         _settings.Save();
         AppLog.Write("设置", "Token 已重新生成");
@@ -709,9 +714,7 @@ public partial class MainWindow : Window
         if (_state is State.Running or State.Starting)
         {
             ShowFromTray();
-            var r = MessageBox.Show(this, "退出后 MCP 服务和隧道都会停止，AI 将无法再访问这台电脑。确定退出吗？",
-                "退出 ZERO", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-            if (r != MessageBoxResult.OK) return;
+            if (!ZeroDialog.Show(this, ExitPrompt)) return;
         }
         _exiting = true;
         StopAll(null);
