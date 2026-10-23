@@ -16,7 +16,7 @@ using Forms = System.Windows.Forms;
 
 namespace ZERO;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IServiceHost
 {
     readonly AppSettings _settings = AppSettings.Load();
     readonly EnvironmentSetup _env = new();
@@ -308,6 +308,7 @@ public partial class MainWindow : Window
         _settings.Mode = full ? "full" : "restricted";
         _settings.Workspace = ws;
         _settings.Save();
+        _runningFull = full;
 
         _publicUrl = null; _serverReady = false;
         RefreshConnectionFields();
@@ -315,30 +316,13 @@ public partial class MainWindow : Window
         SetState(State.Starting, "正在启动 MCP 服务…");
 
         _port = FindFreePort(_settings.Port);
-        var jobDir = System.IO.Path.Combine(AppSettings.DataDir, "jobs");
-        var env = new Dictionary<string, string>
-        {
-            ["MCP_TOKEN"] = _settings.Token,
-            ["MCP_MODE"] = _settings.Mode,
-            ["MCP_TRUST"] = full && _settings.Trust ? "1" : "0",
-            ["MCP_WORKSPACE"] = ws,
-            ["MCP_PORT"] = _port.ToString(),
-            ["MCP_JOBDIR"] = jobDir,
-            ["MCP_PROTECT"] = AppSettings.DataDir,
-            ["MCP_HISTORY_DB"] = _settings.HistoryEnabled ? HistoryStore.DbPath : "",
-            ["MCP_HISTORY_SHARE"] = _settings.HistoryEnabled && _settings.HistoryShare ? "1" : "0",
-            ["MCP_MEMORY_DB"] = _settings.MemoryEnabled ? MemoryStore.DbPath : "",
-            ["MCP_MEMORY_WRITE"] = _settings.MemoryEnabled && _settings.MemoryWrite ? "1" : "0",
-            // 诊断用：记录最近 300 个请求的请求头和 _meta（不含 Token、Cookie、请求内容），用于判断 AI 客户端提供了哪些会话标识
-            ["MCP_REQLOG"] = System.IO.Path.Combine(AppSettings.DataDir, "diagnostics", "requests.jsonl"),
-            ["PYTHONIOENCODING"] = "utf-8",
-            ["PYTHONUTF8"] = "1",
-            ["PYTHONUNBUFFERED"] = "1",
-        };
+        var env = BuildServerEnv(full, ws);
         try
         {
             _server.Start(_env.PythonExe, $"-u \"{_env.ServerPy}\"", _env.RuntimeDir, env);
+            _runningSig = Permissions.Signature(_settings, full);
             SetDot(ServerDot, ServerState, "Orange", "启动中");
+
 
             // 等待端口就绪
             for (int i = 0; i < 60 && !_serverReady; i++)
@@ -366,6 +350,72 @@ public partial class MainWindow : Window
         {
             StopAll(null);
             SetState(State.Error, ex.Message);
+        }
+    }
+
+    /// <summary>MCP 服务的环境变量（访问模式、权限、历史与记忆库）</summary>
+    Dictionary<string, string> BuildServerEnv(bool full, string ws)
+    {
+        var jobDir = System.IO.Path.Combine(AppSettings.DataDir, "jobs");
+        return new Dictionary<string, string>
+        {
+            ["MCP_TOKEN"] = _settings.Token,
+            ["MCP_MODE"] = full ? "full" : "restricted",
+            ["MCP_TRUST"] = full && _settings.Trust ? "1" : "0",
+            ["MCP_WORKSPACE"] = ws,
+            ["MCP_PORT"] = _port.ToString(),
+            ["MCP_JOBDIR"] = jobDir,
+            ["MCP_PROTECT"] = AppSettings.DataDir,
+            ["MCP_HISTORY_DB"] = _settings.HistoryEnabled ? HistoryStore.DbPath : "",
+            ["MCP_HISTORY_SHARE"] = _settings.HistoryEnabled && Permissions.IsEffective(_settings, full, "history") ? "1" : "0",
+            ["MCP_MEMORY_DB"] = _settings.MemoryEnabled ? MemoryStore.DbPath : "",
+            ["MCP_MEMORY_WRITE"] = _settings.MemoryEnabled && Permissions.IsEffective(_settings, full, "memory_write") ? "1" : "0",
+            ["MCP_PERMS"] = Permissions.ToEnv(_settings, full),
+            // 诊断用：记录最近 300 个请求的请求头和 _meta（不含 Token、Cookie、请求内容），用于判断 AI 客户端提供了哪些会话标识
+            ["MCP_REQLOG"] = System.IO.Path.Combine(AppSettings.DataDir, "diagnostics", "requests.jsonl"),
+            ["PYTHONIOENCODING"] = "utf-8",
+            ["PYTHONUTF8"] = "1",
+            ["PYTHONUNBUFFERED"] = "1",
+        };
+    }
+
+    // ====================== IServiceHost（供权限窗口使用） ======================
+    bool _runningFull;
+    string? _runningSig;
+    public bool IsServiceRunning => _state == State.Running;
+    public bool RunningFull => _runningFull;
+    public string? RunningSignature => _runningSig;
+    public bool SelectedFull => ModeFull.IsChecked == true;
+
+    /// <summary>权限修改后只重启 MCP 服务：端口不变，Cloudflare 隧道和公网地址保持不变</summary>
+    public async Task<bool> RestartServerAsync()
+    {
+        if (_state != State.Running) return false;
+        bool full = _runningFull;
+        AppendLog(ServerLog, "■ 权限已修改，正在重启 MCP 服务…");
+        AppLog.Write("运行", "权限已修改，重启 MCP 服务");
+        _serverReady = false;
+        SetDot(ServerDot, ServerState, "Orange", "重启中");
+        try
+        {
+            _server.Start(_env.PythonExe, $"-u \"{_env.ServerPy}\"", _env.RuntimeDir, BuildServerEnv(full, _settings.Workspace));
+            _runningSig = Permissions.Signature(_settings, full);
+            for (int i = 0; i < 60 && !_serverReady; i++)
+            {
+                await Task.Delay(250);
+                if (!_server.IsRunning) throw new Exception("MCP 服务启动失败，请查看左侧日志");
+                if (IsPortOpen(_port)) _serverReady = true;
+            }
+            if (!_serverReady) throw new Exception("MCP 服务启动超时");
+            SetDot(ServerDot, ServerState, "Green", $"运行中 · 127.0.0.1:{_port}");
+            _perms?.RefreshFooter();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StopAll(null);
+            SetState(State.Error, ex.Message);
+            return false;
         }
     }
 
@@ -496,6 +546,23 @@ public partial class MainWindow : Window
 
     MemoryWindow? _memory;
 
+    PermissionWindow? _perms;
+    void BtnPerms_Click(object s, RoutedEventArgs e)
+    {
+        if (_perms == null)
+        {
+            _perms = new PermissionWindow(_settings, this);
+            _perms.Closed += (_, _) => _perms = null;
+            _perms.Show();
+        }
+        else
+        {
+            if (_perms.WindowState == WindowState.Minimized) _perms.WindowState = WindowState.Normal;
+            _perms.SelectTab(SelectedFull);
+            _perms.Activate();
+        }
+    }
+
     void BtnMemory_Click(object s, RoutedEventArgs e)
     {
         if (_memory == null)
@@ -539,6 +606,7 @@ public partial class MainWindow : Window
     {
         AppLog.Write("状态", sub == null ? st.ToString() : $"{st}：{sub}");
         _state = st;
+        _perms?.RefreshFooter();
         bool busy = st is State.Running or State.Starting;
         ModeRestricted.IsEnabled = ModeFull.IsEnabled = BtnBrowse.IsEnabled = TrustSwitch.IsEnabled = !busy;
         string color; string title;
@@ -604,13 +672,13 @@ public partial class MainWindow : Window
         {
             ModeHintBox.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF4, 0xE5));
             ModeHintIcon.Data = (Geometry)FindResource("IcoWarn"); ModeHintIcon.Stroke = (Brush)FindResource("Orange");
-            ModeHint.Text = "可读写整台电脑的文件，并可运行命令、后台脚本。权限等同当前 Windows 账户，请勿泄露 Token。";
+            ModeHint.Text = "可读写整台电脑的文件，并可运行命令、后台脚本。权限等同当前 Windows 账户，请勿泄露 Token。不需要的能力可以在「权限」中关闭。";
         }
         else
         {
             ModeHintBox.Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF5, 0xFF));
             ModeHintIcon.Data = (Geometry)FindResource("IcoInfo"); ModeHintIcon.Stroke = (Brush)FindResource("Accent");
-            ModeHint.Text = "只能读写下方工作空间里的文件，命令执行和后台任务全部禁用。";
+            ModeHint.Text = "只能读写下方工作空间里的文件，命令执行和后台任务全部禁用。可以在「权限」中逐项调整。";
         }
     }
 

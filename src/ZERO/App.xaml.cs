@@ -64,6 +64,20 @@ public partial class App : Application
             t.Start();
             return;
         }
+        // 调试用：ZERO.exe --snapshot-permissions=路径.png（文件名含 -full 时显示全电脑访问模式）
+        var permArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-permissions="));
+        if (permArg != null)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            var path = permArg["--snapshot-permissions=".Length..].Trim('"');
+            var w = new PermissionWindow(Services.AppSettings.Load(), null) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
+            w.SelectTab(path.Contains("-full"));
+            w.Show();
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            t.Tick += (_, _) => { t.Stop(); w.SaveSnapshot(path); Shutdown(); };
+            t.Start();
+            return;
+        }
         _mutex = new Mutex(true, "ZERO_SingleInstance_8f3a", out bool isNew);
         if (!isNew)
         {

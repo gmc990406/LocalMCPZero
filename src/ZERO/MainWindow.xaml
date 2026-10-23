@@ -68,6 +68,14 @@
                                        Foreground="{StaticResource TextSecondary}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BtnPerms" Style="{StaticResource SecondaryButton}" Padding="14,8" FontSize="13"
+                                VerticalAlignment="Center" Margin="0,0,10,0" Click="BtnPerms_Click"
+                                ToolTip="分别设置有限制 / 全电脑访问模式下 AI 可以使用哪些能力">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource IconPath}" Width="13" Height="13" Margin="0,0,7,0" Data="{StaticResource IcoShield}"/>
+                                <TextBlock Text="权限"/>
+                            </StackPanel>
+                        </Button>
                         <Button x:Name="BtnMemory" Style="{StaticResource SecondaryButton}" Padding="14,8" FontSize="13"
                                 VerticalAlignment="Center" Margin="0,0,10,0" Click="BtnMemory_Click"
                                 ToolTip="查看和编辑 AI 共享的长期记忆">

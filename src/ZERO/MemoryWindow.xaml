@@ -197,10 +197,7 @@
                         <CheckBox x:Name="EnableSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
                         <TextBlock Text="启用记忆库" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"
                                    ToolTip="关闭后 AI 看不到也无法使用记忆库（已有记忆会保留）"/>
-                        <CheckBox x:Name="WriteSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
-                        <TextBlock Text="允许 AI 保存和修改记忆" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"
-                                   ToolTip="关闭后 AI 只能搜索记忆，只有你能添加和修改"/>
-                        <TextBlock Text="置顶的记忆会在 AI 连接时直接告诉它" FontSize="11.5" Foreground="{StaticResource TextTertiary}" VerticalAlignment="Center"/>
+                        <TextBlock Text="AI 能否保存和修改记忆在主界面「权限」中设置 · 置顶的记忆会在 AI 连接时直接告诉它" FontSize="11.5" Foreground="{StaticResource TextTertiary}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="SettingHint" Text="开关修改后，重新启动服务生效" FontSize="11.5" Foreground="{StaticResource TextTertiary}"

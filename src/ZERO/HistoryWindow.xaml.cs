@@ -27,8 +27,6 @@ public partial class HistoryWindow : Window
         _settings = settings;
         BtnDataDir.ToolTip = $"历史记录保存在这台电脑的当前用户目录下，更新 ZERO 或移动程序位置都不会丢失：\n{System.IO.Path.GetFullPath(HistoryStore.DbPath)}";
         RecordSwitch.IsChecked = settings.HistoryEnabled;
-        ShareSwitch.IsChecked = settings.HistoryShare;
-        ShareSwitch.IsEnabled = settings.HistoryEnabled;
         foreach (RadioButton rb in KeepGroup.Children)
             rb.IsChecked = (string)rb.Tag == settings.HistoryDays.ToString();
         if (KeepGroup.Children.OfType<RadioButton>().All(r => r.IsChecked != true))
@@ -308,11 +306,9 @@ public partial class HistoryWindow : Window
     void Setting_Changed(object s, RoutedEventArgs e)
     {
         _settings.HistoryEnabled = RecordSwitch.IsChecked == true;
-        _settings.HistoryShare = ShareSwitch.IsChecked == true;
-        ShareSwitch.IsEnabled = _settings.HistoryEnabled;
         _settings.Save();
         SettingHint.Visibility = Visibility.Visible;
-        AppLog.Write("设置", $"历史记录：记录={_settings.HistoryEnabled} AI 可查看={_settings.HistoryShare}");
+        AppLog.Write("设置", $"历史记录：记录={_settings.HistoryEnabled}");
     }
 
     void Keep_Click(object s, RoutedEventArgs e)

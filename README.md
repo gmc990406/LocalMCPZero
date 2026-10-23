@@ -42,6 +42,7 @@
 | 电脑没有公网 IP | 内置 Cloudflare 隧道，自动生成 HTTPS 公网地址，无需账号、无需路由器设置 |
 | 担心被他人访问 | 地址自带随机 Token，无 Token 请求一律 401；可一键重新生成 |
 | 不想让 AI 碰全部文件 | 「有限制」模式只开放一个工作目录，且禁止执行命令 |
+| 只想给 AI 部分能力 | 「权限」里按模式逐项开关：只读不写、不许截图、不许运行命令… |
 | 国内网络下载失败 | 多个下载源自动切换（NuGet → 国内镜像 → 官方源 → 本机 Python），失败原因写入日志 |
 
 ### 适用于哪些 AI？
@@ -83,15 +84,37 @@
 | `search_files` | ✅ | ✅ | 正则全文搜索 |
 | `write_file` / `edit_file` | ✅ | ✅ | 新建、覆盖或精确替换文本 |
 | `make_dir` | ✅ | ✅ | 创建目录 |
-| `system_info` | — | ✅ | 系统、CPU、内存、磁盘、IP 等本机概况（只读） |
-| `list_processes` | — | ✅ | 进程列表，按内存排序（只读） |
+| `system_info` | ⚙️ | ✅ | 系统、CPU、内存、磁盘、IP 等本机概况（只读） |
+| `list_processes` | ⚙️ | ✅ | 进程列表，按内存排序（只读） |
 | `run_command` | — | ✅ | 执行 PowerShell 命令（≤ 120 秒） |
 | `start_job` / `job_status` / `list_jobs` / `stop_job` | — | ✅ | 后台长任务（编译、开发服务器等） |
-| `screenshot` | — | ✅ | 截取桌面并以图片返回 |
-| `history_conversations` / `history_calls` | ✅ | ✅ | 查看历史对话与操作记录（只读，需开启「允许 AI 查看历史」） |
+| `screenshot` | ⚙️ | ✅ | 截取桌面并以图片返回 |
+| `history_conversations` / `history_calls` | ✅ | ✅ | 查看历史对话与操作记录（只读） |
 | `history_note` | ✅ | ✅ | AI 为当前对话写标题和摘要 |
 | `memory_search` | ✅ | ✅ | 搜索记忆库（需启用记忆库） |
-| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改、删除记忆（需开启「允许 AI 保存和修改记忆」） |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改、删除记忆 |
+
+✅ 默认开启 · ⚙️ 默认关闭，可在「权限」中开启 · — 该模式下不可用。除 `history_note` 外，每一项都可以在「权限」中关闭。
+
+### 🛡️ 权限
+
+主界面点「权限」，可以**按访问模式分别**设置 AI 能用哪些能力，「有限制」和「全电脑访问」各有一套开关，互不影响：
+
+| 权限 | 包含的工具 | 有限制 | 全电脑访问 |
+|---|---|:---:|:---:|
+| 读取文件 | `list_files` `read_file` `search_files` | 开 | 开 |
+| 修改文件 | `write_file` `edit_file` `make_dir` | 开 | 开 |
+| 查看系统信息 | `system_info` `list_processes` | 关 | 开 |
+| 截取屏幕 | `screenshot` | 关 | 开 |
+| 运行命令 | `run_command` | 不可用 | 开 |
+| 后台任务 | `start_job` `job_status` `list_jobs` `stop_job` | 不可用 | 开 |
+| 查看操作记录 | `history_conversations` `history_calls` | 开 | 开 |
+| 搜索记忆 | `memory_search` | 开 | 开 |
+| 保存和修改记忆 | `memory_save` `memory_update` `memory_delete` | 开 | 开 |
+
+- 关闭的权限对应的工具**不会提供给 AI**；ZERO 还会在服务说明里告诉 AI 哪些权限被关闭了，需要时 AI 会提示你去「权限」里开启，而不是误以为电脑没有这个能力。
+- 「有限制」模式下始终不能运行命令和后台任务（命令可以访问工作空间以外的任何文件）。
+- 修改自动保存。服务运行中修改当前模式的权限时，点「重启服务使其生效」即可——只重启 MCP 服务，**公网地址不变**。ChatGPT 等会缓存工具列表的客户端需要在连接器设置里刷新（或新开对话）。
 
 ### 🕘 历史记录
 
@@ -105,7 +128,7 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 - **自动清理**：默认保留 30 天（可选 7 / 30 / 90 天或永久），置顶的对话不会被清理。
 - **自动脱敏**：Token、密码、密钥（`password=…`、`Bearer …`、`ghp_…`、`sk-…` 等）在写入前替换为 `***`；超长参数和结果会截断。
 - **隔离**：「有限制」模式下的 AI 只能看到「有限制」模式下的记录。
-- 可以在历史窗口底部关闭「记录操作历史」或「允许 AI 查看历史」，重新启动服务后生效。
+- 可以在历史窗口底部关闭「记录操作历史」；AI 能否查看记录在「权限」中设置。重新启动服务后生效。
 
 > ZERO 只能看到 AI 调用了哪些工具，**看不到你和 AI 的聊天原文**；对话内容靠 AI 用 `history_note` 写的摘要补充。
 
@@ -117,7 +140,7 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 - 主界面点「记忆库」查看和编辑：新建、修改内容和标签、按标签筛选、删除。
 - **置顶**的记忆会在 AI 连接时直接写进服务说明（无需搜索），且 AI 不能删除。
 - 每条记忆可设置可见范围：所有模式 / 仅全电脑访问 / 仅有限制模式（AI 保存时默认为当前模式）。
-- 底部开关：「启用记忆库」「允许 AI 保存和修改记忆」（关闭后 AI 只能搜索），重新启动服务后生效。保存时会自动去掉 Token、密码等敏感内容。
+- 底部开关「启用记忆库」；AI 能否搜索、保存和修改记忆在「权限」中设置。重新启动服务后生效。保存时会自动去掉 Token、密码等敏感内容。
 
 主界面下方的日志面板会自动清理 30 分钟前的内容。
 
@@ -207,6 +230,7 @@ Cloud AI assistants (Notion AI, Claude, ChatGPT, …) can write code and reason 
 | No public IP | Built-in Cloudflare Quick Tunnel gives you an HTTPS URL; no account or router setup needed |
 | Unauthorized access | Every URL carries a random token; requests without it get `401`. Regenerate any time |
 | Don't want AI to see everything | **Restricted** mode exposes a single workspace folder and disables command execution |
+| Only want to grant some capabilities | **Permissions** lets you toggle each capability per mode: read-only, no screenshots, no commands… |
 | Downloads fail on some networks | Multiple mirrors with automatic fallback; every failure is logged with details |
 
 ### Which AI clients are supported?
@@ -248,15 +272,37 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 | `search_files` | ✅ | ✅ | Regex full-text search |
 | `write_file` / `edit_file` | ✅ | ✅ | Create, overwrite or precisely edit text |
 | `make_dir` | ✅ | ✅ | Create a directory |
-| `system_info` | — | ✅ | OS, CPU, memory, disks, IP and uptime (read-only) |
-| `list_processes` | — | ✅ | Running processes sorted by memory (read-only) |
+| `system_info` | ⚙️ | ✅ | OS, CPU, memory, disks, IP and uptime (read-only) |
+| `list_processes` | ⚙️ | ✅ | Running processes sorted by memory (read-only) |
 | `run_command` | — | ✅ | Run a PowerShell command (≤ 120 s) |
 | `start_job` / `job_status` / `list_jobs` / `stop_job` | — | ✅ | Long-running background jobs |
-| `screenshot` | — | ✅ | Capture the desktop and return it as an image |
-| `history_conversations` / `history_calls` | ✅ | ✅ | Browse past conversations and tool calls (read-only, requires "Allow AI to view history") |
+| `screenshot` | ⚙️ | ✅ | Capture the desktop and return it as an image |
+| `history_conversations` / `history_calls` | ✅ | ✅ | Browse past conversations and tool calls (read-only) |
 | `history_note` | ✅ | ✅ | Let the AI write a title and summary for the current conversation |
 | `memory_search` | ✅ | ✅ | Search the memory library (when memory is enabled) |
-| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save, edit, delete memories (requires "Allow AI to save and edit") |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save, edit, delete memories |
+
+✅ on by default · ⚙️ off by default, can be enabled in Permissions · — not available in this mode. Everything except `history_note` can be turned off in Permissions.
+
+### 🛡️ Permissions
+
+Click "权限" (Permissions) in the main window to choose which capabilities the AI gets — **separately for each access mode**. Restricted and full access each have their own set of switches:
+
+| Permission | Tools | Restricted | Full access |
+|---|---|:---:|:---:|
+| Read files | `list_files` `read_file` `search_files` | on | on |
+| Modify files | `write_file` `edit_file` `make_dir` | on | on |
+| System info | `system_info` `list_processes` | off | on |
+| Screenshot | `screenshot` | off | on |
+| Run commands | `run_command` | n/a | on |
+| Background jobs | `start_job` `job_status` `list_jobs` `stop_job` | n/a | on |
+| View history | `history_conversations` `history_calls` | on | on |
+| Search memory | `memory_search` | on | on |
+| Save & edit memory | `memory_save` `memory_update` `memory_delete` | on | on |
+
+- Tools of a disabled permission are **not offered to the AI**. ZERO also tells the AI which permissions are off, so it asks you to enable them instead of assuming the computer can't do it.
+- Restricted mode can never run commands or background jobs (a command can reach files outside the workspace).
+- Changes are saved automatically. While the service is running, click "重启服务使其生效" (restart to apply) — only the MCP server restarts and **the public URL stays the same**. Clients that cache tool lists (e.g. ChatGPT) need a refresh in their connector settings (or a new chat).
 
 ### 🕘 History
 
@@ -270,7 +316,7 @@ ZERO records every tool call made on this PC to a local database (`%LOCALAPPDATA
 - **Retention**: 30 days by default (7 / 30 / 90 days or forever); pinned conversations are never cleaned up.
 - **Redaction**: tokens, passwords and keys (`password=…`, `Bearer …`, `ghp_…`, `sk-…`, etc.) are replaced with `***` before saving; long arguments and results are truncated.
 - **Isolation**: an AI in restricted mode only sees records from restricted mode.
-- "Record history" and "Allow AI to view history" can be turned off at the bottom of the history window (takes effect after restarting the service).
+- "Record history" can be turned off at the bottom of the history window; whether AI can view history is set in Permissions. Takes effect after restarting the service.
 
 > ZERO only sees which tools were called — **it never sees your chat messages**. Conversation context comes from the summaries AI clients write with `history_note`.
 
@@ -282,7 +328,7 @@ Long-term memory shared by all AI clients (`%LOCALAPPDATA%\ZERO\memory.db`, neve
 - Click "记忆库" (Memory) in the main window to browse, add, edit, tag-filter and delete memories.
 - **Pinned** memories are included in the server instructions on every connection (no search needed) and cannot be deleted by AI.
 - Each memory has a visibility scope: all modes / full access only / restricted only (AI-saved memories default to the current mode).
-- Switches: "Enable memory" and "Allow AI to save and edit" (search only when off); take effect after restarting the service. Tokens and passwords are scrubbed on save.
+- Switch: "Enable memory"; whether AI can search / save / edit memories is set in Permissions. Takes effect after restarting the service. Tokens and passwords are scrubbed on save.
 
 The log panels in the main window automatically drop entries older than 30 minutes.
 
@@ -390,6 +436,7 @@ python src\ZERO\Resources\server.py
 | `MCP_JOBDIR` | 后台任务日志目录 · Background job log folder |
 | `MCP_PROTECT` | 禁止访问的目录（`;` 分隔） · Protected folders (`;`-separated) |
 | `MCP_HISTORY_DB` | 历史数据库路径，为空则不记录 · History database path (empty = off) |
+| `MCP_PERMS` | 允许的权限（逗号分隔）：`file_read,file_write,system,screenshot,command,jobs,history,memory_read,memory_write`；未设置时使用默认值 · enabled permissions (comma-separated); defaults when unset |
 | `MCP_HISTORY_SHARE` | `1` = 允许 AI 查看历史 · allow AI to read history |
 | `MCP_MEMORY_DB` | 记忆库路径，为空则不启用 · memory database path (empty = off) |
 | `MCP_MEMORY_WRITE` | `1` = 允许 AI 写入记忆 · allow AI to save/edit memories |
@@ -407,6 +454,7 @@ ZERO/
    ├─ MainWindow.xaml(.cs)        主界面与托盘 · main window & tray
    ├─ HistoryWindow.xaml(.cs)     历史记录窗口 · history window
    ├─ MemoryWindow.xaml(.cs)      记忆库窗口 · memory window
+   ├─ PermissionWindow.xaml(.cs)  权限窗口 · permissions window
    ├─ Controls/ZeroDialog.xaml    统一风格的对话框 · styled dialogs
    ├─ Services/
    │  ├─ EnvironmentSetup.cs      运行环境自动安装 · runtime auto-setup
@@ -414,6 +462,7 @@ ZERO/
    │  ├─ AppSettings.cs           配置 · settings (%LOCALAPPDATA%\ZERO)
    │  ├─ HistoryStore.cs          历史记录数据库 · history database (SQLite)
    │  ├─ MemoryStore.cs           记忆库数据库 · memory database (SQLite)
+   │  ├─ Permissions.cs           权限定义与默认值 · permission definitions & defaults
    │  └─ AppLog.cs                文件日志 · file logging
    ├─ Resources/
    │  ├─ server.py                MCP 服务（嵌入资源） · MCP server (embedded)

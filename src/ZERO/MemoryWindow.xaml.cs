@@ -26,8 +26,6 @@ public partial class MemoryWindow : Window
         _settings = settings;
         BtnDataDir.ToolTip = $"记忆库保存在这台电脑的当前用户目录下，更新 ZERO 或移动程序位置都不会丢失：\n{System.IO.Path.GetFullPath(MemoryStore.DbPath)}";
         EnableSwitch.IsChecked = settings.MemoryEnabled;
-        WriteSwitch.IsChecked = settings.MemoryWrite;
-        WriteSwitch.IsEnabled = settings.MemoryEnabled;
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); Reload(); };
         StateChanged += (_, _) => Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
         Activated += (_, _) => { if (IsLoaded && !Editing) Reload(); };
@@ -222,11 +220,9 @@ public partial class MemoryWindow : Window
     void Setting_Changed(object s, RoutedEventArgs e)
     {
         _settings.MemoryEnabled = EnableSwitch.IsChecked == true;
-        _settings.MemoryWrite = WriteSwitch.IsChecked == true;
-        WriteSwitch.IsEnabled = _settings.MemoryEnabled;
         _settings.Save();
         SettingHint.Visibility = Visibility.Visible;
-        AppLog.Write("设置", $"记忆库：启用={_settings.MemoryEnabled} AI 可写入={_settings.MemoryWrite}");
+        AppLog.Write("设置", $"记忆库：启用={_settings.MemoryEnabled}");
     }
 
     void DataDir_Click(object s, RoutedEventArgs e)

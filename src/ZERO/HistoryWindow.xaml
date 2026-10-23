@@ -311,9 +311,8 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <CheckBox x:Name="RecordSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
                         <TextBlock Text="记录操作历史" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"/>
-                        <CheckBox x:Name="ShareSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
-                        <TextBlock Text="允许 AI 查看历史" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"
-                                   ToolTip="AI 只能看到同一访问模式下的记录"/>
+                        <TextBlock Text="AI 能否查看记录在主界面「权限」中设置" FontSize="11.5" Foreground="{StaticResource TextTertiary}"
+                                   VerticalAlignment="Center" Margin="0,0,24,0"/>
                         <TextBlock Text="保留" FontSize="12.5" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <Border Background="#E9E9EE" CornerRadius="8">
                             <StackPanel x:Name="KeepGroup" Orientation="Horizontal">

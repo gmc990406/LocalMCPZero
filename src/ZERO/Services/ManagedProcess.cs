@@ -70,7 +70,7 @@ public sealed class ManagedProcess
         {
             int code = -1;
             try { code = p.ExitCode; } catch { }
-            if (!_stopping) Exited?.Invoke(code);
+            if (!_stopping && ReferenceEquals(_p, p)) Exited?.Invoke(code);   // 重启时旧进程的退出不算意外退出
         };
         try { p.Start(); }
         catch (Win32Exception ex) { throw new InvalidOperationException($"无法启动 {file}：{ex.Message}"); }
