@@ -44,7 +44,7 @@
                         </Grid.ColumnDefinitions>
                         <Path x:Name="NoteGlyph" Width="13" Height="13" Stretch="Uniform" StrokeThickness="1.8" VerticalAlignment="Top"
                               Margin="0,3,8,0" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                              Data="{StaticResource IcoWarn}"/>
+                              Data="{StaticResource Icon.Warning}"/>
                         <TextBlock x:Name="NoteText" Grid.Column="1" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
                     </Grid>
                 </Border>

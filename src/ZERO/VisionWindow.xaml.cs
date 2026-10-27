@@ -11,7 +11,7 @@ using ZERO.Services;
 namespace ZERO;
 
 /// <summary>视觉工作台：查看桌面窗口和控件树、授权 AI 操作指定窗口、批准 AI 的操作请求、查看操作日志、紧急停止。</summary>
-public partial class VisionWindow : Window
+public partial class VisionWindow : UserControl, ISizeTierAware
 {
     static readonly HashSet<string> Protected = new(StringComparer.OrdinalIgnoreCase)
         { "consent.exe", "LogonUI.exe", "CredentialUIBroker.exe", "LockApp.exe", "SecureHealthSystray.exe" };
@@ -38,7 +38,7 @@ public partial class VisionWindow : Window
     void SetScope(string desired)
     {
         if (desired == "all" && !ObserveAll &&
-            !ZeroDialog.Show(this, new DialogSpec("启用全部进程观测？",
+            !ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("启用全部进程观测？",
                 "AI 将可以查看现在和以后打开的普通窗口；开启窗口操作权限后，也能操作。ZERO 自身、安全窗口、密码字段仍受保护，可随时切回指定进程或紧急停止。",
                 DialogKind.Warning, "启用全部观测"))) return;
         GovernanceStore.Set(ScopeKey, desired);
@@ -65,10 +65,9 @@ public partial class VisionWindow : Window
         InitializeComponent();
         _settings = settings;
         _host = host;
-        StateChanged += (_, _) => Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
         _timer.Tick += (_, _) =>
         {
-            if (IsActive)
+            if (Window.GetWindow(this)?.IsActive == true)
             {
                 try
                 {
@@ -78,11 +77,11 @@ public partial class VisionWindow : Window
                 }
                 catch (Exception ex) { AppLog.Error("视觉窗口刷新", ex); }
             }
-            if (IsActive || _lastRequests != 0) { RefreshScope(); RefreshStatus(); }
+            if ((Window.GetWindow(this)?.IsActive == true) || _lastRequests != 0) { RefreshScope(); RefreshStatus(); }
         };
         Loaded += (_, _) => { LoadWindows(); RefreshScope(); RefreshStatus(); _timer.Start(); };
-        Closed += (_, _) => _timer.Stop();
-        Activated += (_, _) => { if (IsLoaded) RefreshStatus(); };
+        Unloaded += (_, _) => _timer.Stop();
+        IsVisibleChanged += (_, _) => { if (IsVisible && IsLoaded) RefreshStatus(); };
     }
 
     /// <summary>授权记录对应的访问模式：服务运行中用运行的模式，否则用主界面选中的模式</summary>
@@ -107,7 +106,7 @@ public partial class VisionWindow : Window
         catch (Exception ex)
         {
             AppLog.Error("视觉", ex);
-            ZeroDialog.Show(this, new DialogSpec($"{what}失败", ex.Message, DialogKind.Error, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec($"{what}失败", ex.Message, DialogKind.Error, "好", null));
         }
     }
 
@@ -166,7 +165,7 @@ public partial class VisionWindow : Window
     void Stop_Click(object s, RoutedEventArgs e)
     {
         bool stop = !GovernanceStore.GetBool("ui.stop");
-        if (!stop && !ZeroDialog.Show(this, new DialogSpec("解除紧急停止？", "解除后 AI 按观测范围和权限设置操作，不再需要逐窗口授权。", DialogKind.Question, "解除"))) return;
+        if (!stop && !ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("解除紧急停止？", "解除后 AI 按观测范围和权限设置操作，不再需要逐窗口授权。", DialogKind.Question, "解除"))) return;
         Try(stop ? "紧急停止" : "解除紧急停止", () => GovernanceStore.EmergencyStop(stop));
         _lastRequests = -1;
         RefreshStatus();
@@ -315,9 +314,6 @@ public partial class VisionWindow : Window
     }
 
     // ====================== 窗口按钮 / 调试截图 ======================
-    void BtnClose_Click(object s, RoutedEventArgs e) => Close();
-    void BtnMin_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    void BtnMax_Click(object s, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     public void SelectFirstForPreview(string? titleContains = null)
     {
@@ -336,5 +332,13 @@ public partial class VisionWindow : Window
         enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
         using var fs = System.IO.File.Create(path);
         enc.Save(fs);
+    }
+
+    public void ApplySizeTier(string tier, double listCol, double visionList, double shotMin, double gap)
+    {
+        if (ListCol != null) ListCol.Width = new GridLength(visionList);
+        if (ShotBox != null) ShotBox.MinHeight = shotMin;
+        if (ListGap != null) ListGap.Width = new GridLength(gap);
+    
     }
 }

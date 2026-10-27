@@ -21,7 +21,7 @@ public interface IServiceHost
 }
 
 /// <summary>权限：按访问模式（有限制 / 全电脑访问）分别设置 AI 可以使用哪些能力。</summary>
-public partial class PermissionWindow : Window
+public partial class PermissionWindow : UserControl, ISizeTierAware
 {
     readonly AppSettings _settings;
     readonly IServiceHost? _host;
@@ -43,8 +43,7 @@ public partial class PermissionWindow : Window
         InitializeComponent();
         _settings = settings;
         _host = host;
-        StateChanged += (_, _) => Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
-        Activated += (_, _) => { if (IsLoaded) Refresh(); };   // 记忆库 / 历史记录窗口里的总开关可能变了
+        IsVisibleChanged += (_, _) => { if (IsVisible && IsLoaded) Refresh(); };   // 记忆库 / 历史记录页里的总开关可能变了
         BuildRows();
         SelectTab(host?.SelectedFull ?? settings.Mode == "full");
     }
@@ -68,16 +67,31 @@ public partial class PermissionWindow : Window
     }
 
     // ====================== 列表 ======================
+    string _tier = "size-m";
+
+    public void ApplySizeTier(string tier, double listCol, double visionList, double shotMin, double gap)
+    {
+        _tier = tier;
+        bool two = tier is "size-m" or "size-l";
+        PermGapCol.Width = two ? new GridLength(gap) : new GridLength(0);
+        PermCol1Def.Width = two ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        BuildRows();
+    }
+
     void BuildRows()
     {
-        RowsHost.Children.Clear();
+        PermCol0.Children.Clear();
+        PermCol1.Children.Clear();
         _rows.Clear();
+        bool two = _tier is "size-m" or "size-l";
+        int gi = 0;
         foreach (var group in Permissions.All.GroupBy(p => p.Group))
         {
-            RowsHost.Children.Add(new TextBlock
+            var host = !two || gi % 2 == 0 ? PermCol0 : PermCol1;
+            host.Children.Add(new TextBlock
             {
                 Text = group.Key, Style = (Style)FindResource("Caption"),
-                Margin = new Thickness(4, RowsHost.Children.Count == 0 ? 8 : 18, 0, 8),
+                Margin = new Thickness(4, host.Children.Count == 0 ? 8 : 18, 0, 8),
             });
             var list = new StackPanel();
             foreach (var p in group)
@@ -86,7 +100,8 @@ public partial class PermissionWindow : Window
                     list.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(0xEC, 0xEC, 0xF0)), Margin = new Thickness(0, 12, 0, 12) });
                 list.Children.Add(BuildRow(p));
             }
-            RowsHost.Children.Add(new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(18, 14, 16, 14), Child = list });
+            host.Children.Add(new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(18, 14, 16, 14), Child = list, Margin = new Thickness(0, 0, 0, 8) });
+            gi++;
         }
     }
 
@@ -111,7 +126,7 @@ public partial class PermissionWindow : Window
             Foreground = (Brush)FindResource("TextTertiary"), Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap,
         });
         var noteLine = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-        row.NoteIcon = new Path { Style = (Style)FindResource("IconPath"), Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+        row.NoteIcon = new Path { Style = (Style)FindResource("IconPresenter"), Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
         row.Note = new TextBlock { FontSize = 11.5, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 520 };
         noteLine.Children.Add(row.NoteIcon);
         noteLine.Children.Add(row.Note);
@@ -181,7 +196,7 @@ public partial class PermissionWindow : Window
             var brush = (Brush)FindResource(warn ? "Orange" : "TextSecondary");
             r.Note.Foreground = brush;
             r.NoteIcon.Stroke = brush;
-            r.NoteIcon.Data = (Geometry)FindResource(warn ? "IcoWarn" : (!_full && p.FullOnly) ? "IcoLock" : "IcoInfo");
+            r.NoteIcon.Data = (Geometry)FindResource(warn ? "Icon.Warning" : (!_full && p.FullOnly) ? "Icon.Lock" : "Icon.Info");
         }
         _suppress = false;
 
@@ -190,13 +205,13 @@ public partial class PermissionWindow : Window
         if (_full)
         {
             ModeBox.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF4, 0xE5));
-            ModeIcon.Data = (Geometry)FindResource("IcoWarn"); ModeIcon.Stroke = (Brush)FindResource("Orange");
+            ModeIcon.Data = (Geometry)FindResource("Icon.Warning"); ModeIcon.Stroke = (Brush)FindResource("Orange");
             ModeText.Text = "全电脑访问：AI 的权限等同当前 Windows 账户。不需要的能力可以在这里关闭，例如只允许读取文件、不允许截图。";
         }
         else
         {
             ModeBox.Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF5, 0xFF));
-            ModeIcon.Data = (Geometry)FindResource("IcoInfo"); ModeIcon.Stroke = (Brush)FindResource("Accent");
+            ModeIcon.Data = (Geometry)FindResource("Icon.Info"); ModeIcon.Stroke = (Brush)FindResource("Accent");
             ModeText.Text = "有限制：文件操作只能在工作空间内进行，运行命令和后台任务始终禁用。";
         }
         RefreshFooter();
@@ -250,7 +265,7 @@ public partial class PermissionWindow : Window
         bool ok = await _host.RestartServerAsync();
         _restarting = false;
         _justApplied = ok ? "已重启服务，新的权限已生效。ChatGPT 等客户端需要刷新连接器（或新开对话）才能看到新的工具列表。" : null;
-        if (!ok) ZeroDialog.Show(this, new DialogSpec("重启失败", "MCP 服务没有成功重启，请在主界面查看日志后重新启动。", DialogKind.Error, "好", null));
+        if (!ok) ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("重启失败", "MCP 服务没有成功重启，请在主界面查看日志后重新启动。", DialogKind.Error, "好", null));
         RefreshFooter();
     }
 
@@ -267,10 +282,4 @@ public partial class PermissionWindow : Window
         using var fs = System.IO.File.Create(path);
         enc.Save(fs);
     }
-
-    // ====================== 窗口按钮 ======================
-    void BtnClose_Click(object s, RoutedEventArgs e) => Close();
-    void BtnMin_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    void BtnMax_Click(object s, RoutedEventArgs e) =>
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 }

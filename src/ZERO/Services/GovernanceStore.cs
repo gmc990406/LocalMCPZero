@@ -152,7 +152,14 @@ public sealed class GovEvent
     public DateTime Time { get; init; }
     public string Text { get; init; } = "";
     public string Actor { get; init; } = "";
-    public string Line => $"{Time:MM-dd HH:mm:ss}  {Actor}  {Text}";
+    public long MemoryId { get; init; }
+    public string ActionLabel { get; init; } = "";
+    public long BeforeRevision { get; init; }
+    public long AfterRevision { get; init; }
+    public string TimeText => Time.ToString("MM-dd HH:mm:ss");
+    public string MemoryRef => MemoryId > 0 ? $"#{MemoryId}" : "";
+    public string VersionChange => AfterRevision > 0 ? $"{BeforeRevision} → {AfterRevision}" : "";
+    public string Line => $"{TimeText}  {Actor}  {Text}";
 }
 
 public sealed record GovOverview(long Memories, long Archived, long Trash, long Pinned, long CandidatesOpen, long DecisionsPending,
@@ -393,11 +400,17 @@ public static class GovernanceStore
             var type = r.GetString(2);
             var t = new MemoryVersion { Action = type }.ActionText;
             if (type == "review_keep") t = "复审：保留"; else if (type == "merge_target") t = "合并（保留）"; else if (type == "purge") t = "永久删除";
+            long memId = r.GetInt64(1);
+            long before = r.GetInt64(5), after = r.GetInt64(6);
             list.Add(new GovEvent
             {
                 Time = MemoryStore.ToLocal(r.GetDouble(0)),
                 Actor = r.GetString(3) == "user" ? "用户" : r.GetString(3) == "ai" ? "AI " + r.GetString(4) : r.GetString(4),
-                Text = $"#{r.GetInt64(1)} {t}" + (r.GetInt64(6) > 0 ? $"（版本 {r.GetInt64(5)} → {r.GetInt64(6)}）" : "") + (r.GetString(7).Length > 0 ? "：" + r.GetString(7) : ""),
+                MemoryId = memId,
+                ActionLabel = t,
+                BeforeRevision = before,
+                AfterRevision = after,
+                Text = $"#{memId} {t}" + (after > 0 ? $"（版本 {before} → {after}）" : "") + (r.GetString(7).Length > 0 ? "：" + r.GetString(7) : ""),
             });
         }
         return list;

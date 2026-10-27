@@ -6,16 +6,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Threading;
 using ZERO.Services;
 
 namespace ZERO;
 
 /// <summary>历史记录：按对话 / 按工具浏览 AI 的操作，可编辑标题、摘要、备注，可删除、拆分、置顶。</summary>
-public partial class HistoryWindow : Window
+public partial class HistoryWindow : UserControl, ISizeTierAware
 {
     readonly AppSettings _settings;
-    readonly DispatcherTimer _searchDelay = new() { Interval = TimeSpan.FromMilliseconds(300) };
     bool _toolView, _suppress;
     ConversationItem? _conv;
     ToolItem? _tool;
@@ -32,16 +30,14 @@ public partial class HistoryWindow : Window
         if (KeepGroup.Children.OfType<RadioButton>().All(r => r.IsChecked != true))
             ((RadioButton)KeepGroup.Children[1]).IsChecked = true;
 
-        _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); Reload(); };
-        StateChanged += (_, _) => Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
-        Activated += (_, _) => { if (IsLoaded && !Editing) Reload(); };
+        IsVisibleChanged += (_, _) => { if (IsVisible && IsLoaded && !Editing) Reload(); };
         Loaded += (_, _) => Reload();
     }
 
     /// <summary>正在编辑标题/摘要/备注时不自动刷新，避免覆盖输入内容</summary>
     bool Editing => TitleEdit.IsKeyboardFocusWithin || SummaryEdit.IsKeyboardFocusWithin || NoteEdit.IsKeyboardFocusWithin;
 
-    string Query => SearchBox.Text.Trim();
+    string Query => Search.Text.Trim();
 
     // ====================== 列表 ======================
     void Reload(long? selectConv = null, long? selectCall = null)
@@ -75,7 +71,7 @@ public partial class HistoryWindow : Window
         {
             _suppress = false;
             AppLog.Error("历史", ex);
-            ZeroDialog.Show(this, new DialogSpec("无法读取历史记录", ex.Message, DialogKind.Error, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("无法读取历史记录", ex.Message, DialogKind.Error, "好", null));
         }
     }
 
@@ -214,7 +210,7 @@ public partial class HistoryWindow : Window
     void DeleteConv_Click(object s, RoutedEventArgs e)
     {
         if (_conv == null) return;
-        if (!ZeroDialog.Show(this, new DialogSpec("删除这个对话？",
+        if (!ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("删除这个对话？",
                 $"「{_conv.DisplayTitle}」及其 {_conv.Calls} 条操作记录将被永久删除。", DialogKind.Danger, "删除"))) return;
         Try(() => HistoryStore.DeleteConversation(_conv.Id));
         _conv = null; _call = null;
@@ -224,7 +220,7 @@ public partial class HistoryWindow : Window
     void DeleteCall_Click(object s, RoutedEventArgs e)
     {
         if (_call == null) return;
-        if (!ZeroDialog.Show(this, new DialogSpec("删除这条记录？", $"{_call.Tool} · {_call.Time:MM-dd HH:mm:ss} 将被永久删除。",
+        if (!ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("删除这条记录？", $"{_call.Tool} · {_call.Time:MM-dd HH:mm:ss} 将被永久删除。",
                 DialogKind.Danger, "删除"))) return;
         Try(() => HistoryStore.DeleteCall(_call.Id));
         _call = null;
@@ -234,7 +230,7 @@ public partial class HistoryWindow : Window
     void Split_Click(object s, RoutedEventArgs e)
     {
         if (_call == null) return;
-        if (!ZeroDialog.Show(this, new DialogSpec("拆分为新对话？",
+        if (!ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("拆分为新对话？",
                 "把这条记录及之后的记录移到一个新对话中。适用于同一个 AI 在短时间内做了两件无关的事。", DialogKind.Question, "拆分"))) return;
         long id = 0;
         var callId = _call.Id;
@@ -249,10 +245,10 @@ public partial class HistoryWindow : Window
         Try(() => prev = HistoryStore.Previous(_conv));
         if (prev == null)
         {
-            ZeroDialog.Show(this, new DialogSpec("没有可合并的上一组", $"{_conv.Client} 在这一组之前没有其他记录。", DialogKind.Info, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("没有可合并的上一组", $"{_conv.Client} 在这一组之前没有其他记录。", DialogKind.Info, "好", null));
             return;
         }
-        if (!ZeroDialog.Show(this, new DialogSpec("合并到上一组？",
+        if (!ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("合并到上一组？",
                 $"把这一组的 {_conv.Calls} 条记录并入 #{prev.Id}「{prev.DisplayTitle}」。适用于同一个聊天被分成了多组。", DialogKind.Question, "合并"))) return;
         long from = _conv.Id, into = prev.Id;
         Try(() => HistoryStore.Merge(from, into));
@@ -276,11 +272,10 @@ public partial class HistoryWindow : Window
         if (_call == null) return;
         long conv = _call.ConvId, call = _call.Id;
         _suppress = true;
-        SearchBox.Text = "";
+        Search.Clear(raise: false);
         ViewConv.IsChecked = true;
         _toolView = false;
         _suppress = false;
-        _searchDelay.Stop();
         Reload(conv, call);
     }
 
@@ -294,11 +289,10 @@ public partial class HistoryWindow : Window
         Reload();
     }
 
-    void Search_Changed(object s, TextChangedEventArgs e)
+    void Search_Go(object? s, EventArgs e)
     {
-        SearchHint.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (_suppress || !IsLoaded) return;
-        _searchDelay.Stop(); _searchDelay.Start();
+        Reload();
     }
 
     void Refresh_Click(object s, RoutedEventArgs e) => Reload();
@@ -315,7 +309,7 @@ public partial class HistoryWindow : Window
     {
         var days = int.Parse((string)((RadioButton)s).Tag);
         if (days == _settings.HistoryDays) return;
-        if (days > 0 && (days < _settings.HistoryDays || _settings.HistoryDays == 0) && !ZeroDialog.Show(this, new DialogSpec(
+        if (days > 0 && (days < _settings.HistoryDays || _settings.HistoryDays == 0) && !ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec(
                 $"只保留 {days} 天？", $"超过 {days} 天的对话会被立即删除（置顶的对话除外）。", DialogKind.Warning, "确定")))
         {
             foreach (RadioButton rb in KeepGroup.Children) rb.IsChecked = (string)rb.Tag == _settings.HistoryDays.ToString();
@@ -331,7 +325,7 @@ public partial class HistoryWindow : Window
 
     void ClearAll_Click(object s, RoutedEventArgs e)
     {
-        if (!ZeroDialog.Show(this, new DialogSpec("清空历史记录？", "所有对话和操作记录都将被永久删除，无法恢复。",
+        if (!ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("清空历史记录？", "所有对话和操作记录都将被永久删除，无法恢复。",
                 DialogKind.Danger, "清空", "取消", "置顶的对话会保留。"))) return;
         Try(() => HistoryStore.ClearAll(keepPinned: true));
         AppLog.Write("历史", "已清空历史记录（保留置顶）");
@@ -345,17 +339,10 @@ public partial class HistoryWindow : Window
         catch (Exception ex)
         {
             AppLog.Error("历史", ex);
-            ZeroDialog.Show(this, new DialogSpec("操作失败", ex.Message, DialogKind.Error, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("操作失败", ex.Message, DialogKind.Error, "好", null));
         }
     }
 
-    // ====================== 窗口按钮 ======================
-    void BtnClose_Click(object s, RoutedEventArgs e) => Close();
-    void BtnMin_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    void BtnMax_Click(object s, RoutedEventArgs e) =>
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-
-    // 调试用：渲染当前窗口为 PNG（--snapshot-history）
     public void SaveSnapshot(string path)
     {
         var root = (FrameworkElement)Content;
@@ -375,5 +362,12 @@ public partial class HistoryWindow : Window
         if (toolView) ViewTool.IsChecked = true;
         if (MainList.Items.Count > 0) MainList.SelectedIndex = 0;
         if (CallList.Items.Count > callIndex) CallList.SelectedIndex = callIndex;
+    }
+
+    public void ApplySizeTier(string tier, double listCol, double visionList, double shotMin, double gap)
+    {
+        if (ListCol != null) ListCol.Width = new GridLength(listCol);
+        if (ListGap != null) ListGap.Width = new GridLength(gap);
+    
     }
 }

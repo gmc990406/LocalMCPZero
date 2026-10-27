@@ -47,6 +47,7 @@ public partial class MainWindow : Window, IServiceHost
         UpdateModeUi();
         RefreshConnectionFields();
         SetState(State.Stopped);
+        ApplySizeTier();
 
         _server.Output += OnServerLine;
         _tunnel.Output += OnTunnelLine;
@@ -58,7 +59,12 @@ public partial class MainWindow : Window, IServiceHost
             Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
             if (WindowState == WindowState.Minimized) HideToTray();
         };
-        Loaded += async (_, _) => { InitTray(); StartMaintenanceTimers(); InitGovernance(); StartSnapshotIfRequested(); await RunSetupAsync(); };
+        Loaded += async (_, _) =>
+        {
+            InitTray(); StartMaintenanceTimers(); InitGovernance(); StartSnapshotIfRequested();
+            if (IsSnapshotProcess()) { ApplySizeTier(); return; }
+            await RunSetupAsync();
+        };
     }
 
     // 调试用：ZERO.exe --snapshot=路径  每 2 秒把窗口画面保存为图片（锁屏时也可用）
@@ -103,7 +109,7 @@ public partial class MainWindow : Window, IServiceHost
     // ====================== 图标 ======================
     System.Windows.Shapes.Path MakeIcon(string key, double size, Brush? stroke = null)
     {
-        var p = new System.Windows.Shapes.Path { Style = (Style)FindResource("IconPath"), Data = (Geometry)FindResource(key), Width = size, Height = size };
+        var p = new System.Windows.Shapes.Path { Style = (Style)FindResource("IconPresenter"), Data = (Geometry)FindResource(key), Width = size, Height = size };
         if (stroke != null) p.Stroke = stroke;
         return p;
     }
@@ -119,7 +125,7 @@ public partial class MainWindow : Window, IServiceHost
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var icon = MakeIcon("IcoCircle", 13, (Brush)FindResource("Gray"));
+        var icon = MakeIcon("Icon.Circle", 13, (Brush)FindResource("Gray"));
         icon.HorizontalAlignment = HorizontalAlignment.Left;
         var text = new TextBlock { Text = title, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
         var note = new TextBlock
@@ -139,13 +145,13 @@ public partial class MainWindow : Window, IServiceHost
         switch (state)
         {
             case "run":
-                s.Icon.Data = (Geometry)FindResource("IcoRing"); s.Icon.Stroke = (Brush)FindResource("Accent");
+                s.Icon.Data = (Geometry)FindResource("Icon.Ring"); s.Icon.Stroke = (Brush)FindResource("Accent");
                 s.Text.FontWeight = FontWeights.SemiBold; break;
             case "ok":
-                s.Icon.Data = (Geometry)FindResource("IcoCheck"); s.Icon.Stroke = (Brush)FindResource("Green");
+                s.Icon.Data = (Geometry)FindResource("Icon.Check"); s.Icon.Stroke = (Brush)FindResource("Green");
                 s.Text.FontWeight = FontWeights.Normal; break;
             case "fail":
-                s.Icon.Data = (Geometry)FindResource("IcoClose"); s.Icon.Stroke = (Brush)FindResource("Red");
+                s.Icon.Data = (Geometry)FindResource("Icon.Close"); s.Icon.Stroke = (Brush)FindResource("Red");
                 s.Text.FontWeight = FontWeights.SemiBold; break;
         }
     }
@@ -530,90 +536,110 @@ public partial class MainWindow : Window, IServiceHost
     void ClearServerLog_Click(object s, RoutedEventArgs e) => ClearLog(ServerLog);
     void ClearTunnelLog_Click(object s, RoutedEventArgs e) => ClearLog(TunnelLog);
 
-    // ====================== 历史记录 ======================
+    // ====================== 页面导航（侧栏 / 托盘） ======================
     HistoryWindow? _history;
+    MemoryWindow? _memory;
+    PermissionWindow? _perms;
+    GovernanceWindow? _gov;
+    VisionWindow? _vision;
+    string _page = "overview";
 
-    void BtnHistory_Click(object s, RoutedEventArgs e)
+    void Nav_Checked(object s, RoutedEventArgs e)
     {
-        if (_history == null)
-        {
-            _history = new HistoryWindow(_settings);
-            _history.Closed += (_, _) => _history = null;
-            _history.Show();
-        }
-        else
-        {
-            if (_history.WindowState == WindowState.Minimized) _history.WindowState = WindowState.Normal;
-            _history.Activate();
-        }
+        if (s is RadioButton rb && rb.Tag is string tag)
+            Navigate(tag);
     }
 
-    MemoryWindow? _memory;
+    public void Navigate(string page)
+    {
+        _page = page;
+        bool overview = page == "overview";
+        OverviewHost.Visibility = overview ? Visibility.Visible : Visibility.Collapsed;
+        PageHost.Visibility = overview ? Visibility.Collapsed : Visibility.Visible;
 
-    PermissionWindow? _perms;
-    void BtnPerms_Click(object s, RoutedEventArgs e)
+        RadioButton? target = page switch
+        {
+            "overview" => NavOverview,
+            "perms" => NavPerms,
+            "memory" => NavMemory,
+            "gov" => NavGov,
+            "vision" => NavVision,
+            "history" => NavHistory,
+            _ => NavOverview
+        };
+        if (target != null && target.IsChecked != true)
+            target.IsChecked = true;
+
+        if (overview)
+        {
+            PageHost.Content = null;
+            return;
+        }
+
+        UserControl pageCtrl = page switch
+        {
+            "perms" => EnsurePerms(),
+            "memory" => EnsureMemory(),
+            "gov" => EnsureGov(),
+            "vision" => EnsureVision(),
+            "history" => EnsureHistory(),
+            _ => EnsurePerms()
+        };
+        PageHost.Content = pageCtrl;
+        if (page == "perms") _perms?.SelectTab(SelectedFull);
+    }
+
+    PermissionWindow EnsurePerms()
     {
         if (_perms == null)
         {
             _perms = new PermissionWindow(_settings, this);
-            _perms.Closed += (_, _) => _perms = null;
-            _perms.Show();
+            ApplySizeTier();
         }
-        else
-        {
-            if (_perms.WindowState == WindowState.Minimized) _perms.WindowState = WindowState.Normal;
-            _perms.SelectTab(SelectedFull);
-            _perms.Activate();
-        }
+        return _perms;
     }
-
-    void BtnMemory_Click(object s, RoutedEventArgs e)
+    MemoryWindow EnsureMemory()
     {
         if (_memory == null)
         {
             _memory = new MemoryWindow(_settings);
-            _memory.Closed += (_, _) => _memory = null;
-            _memory.Show();
+            ApplySizeTier();
         }
-        else
-        {
-            if (_memory.WindowState == WindowState.Minimized) _memory.WindowState = WindowState.Normal;
-            _memory.Activate();
-        }
+        return _memory;
     }
-
-    GovernanceWindow? _gov;
-    void BtnGov_Click(object s, RoutedEventArgs e)
+    GovernanceWindow EnsureGov()
     {
         if (_gov == null)
         {
             _gov = new GovernanceWindow(_settings);
-            _gov.Closed += (_, _) => _gov = null;
-            _gov.Show();
+            ApplySizeTier();
         }
-        else
-        {
-            if (_gov.WindowState == WindowState.Minimized) _gov.WindowState = WindowState.Normal;
-            _gov.Activate();
-        }
+        return _gov;
     }
-
-    VisionWindow? _vision;
-    void BtnVision_Click(object s, RoutedEventArgs e)
+    VisionWindow EnsureVision()
     {
         if (_vision == null)
         {
             _vision = new VisionWindow(_settings, this);
-            _vision.Closed += (_, _) => _vision = null;
-            _vision.Show();
+            ApplySizeTier();
         }
-        else
+        return _vision;
+    }
+    HistoryWindow EnsureHistory()
+    {
+        if (_history == null)
         {
-            if (_vision.WindowState == WindowState.Minimized) _vision.WindowState = WindowState.Normal;
-            _vision.Activate();
+            _history = new HistoryWindow(_settings);
+            ApplySizeTier();
         }
+        return _history;
     }
 
+    void BtnHistory_Click(object s, RoutedEventArgs e) => Navigate("history");
+    void BtnPerms_Click(object s, RoutedEventArgs e) => Navigate("perms");
+    void BtnMemory_Click(object s, RoutedEventArgs e) => Navigate("memory");
+    void BtnGov_Click(object s, RoutedEventArgs e) => Navigate("gov");
+    void BtnVision_Click(object s, RoutedEventArgs e) => Navigate("vision");
     // ====================== 智能治理：数据库准备、定时检查记忆库、待处理提醒 ======================
     bool _govReady;
     bool _scanRunning;
@@ -736,21 +762,21 @@ public partial class MainWindow : Window, IServiceHost
         {
             case State.Starting:
                 color = "Orange"; title = "正在启动"; sub ??= "";
-                ToggleText.Text = "停止"; SetToggleIcon("IcoStop", true);
+                ToggleText.Text = "停止"; SetToggleIcon("Icon.Stop", true);
                 BtnToggle.Background = (Brush)FindResource("Red"); break;
             case State.Running:
                 color = "Green"; title = "运行中";
                 sub = (ModeFull.IsChecked == true ? (_settings.Trust ? "全电脑访问 · 免确认" : "全电脑访问") : $"有限制 · {WorkspaceBox.Text}")
                       + " · 复制 MCP 地址到 AI 客户端即可连接";
-                ToggleText.Text = "停止"; SetToggleIcon("IcoStop", true);
+                ToggleText.Text = "停止"; SetToggleIcon("Icon.Stop", true);
                 BtnToggle.Background = (Brush)FindResource("Red"); break;
             case State.Error:
                 color = "Red"; title = "出错了"; sub ??= "";
-                ToggleText.Text = "重新启动"; SetToggleIcon("IcoRefresh", false);
+                ToggleText.Text = "重新启动"; SetToggleIcon("Icon.Refresh", false);
                 BtnToggle.Background = (Brush)FindResource("Accent"); break;
             default:
                 color = "Gray"; title = "已停止"; sub ??= "选择访问模式后点击「启动」";
-                ToggleText.Text = "启动"; SetToggleIcon("IcoPlay", true);
+                ToggleText.Text = "启动"; SetToggleIcon("Icon.Play", true);
                 BtnToggle.Background = (Brush)FindResource("Accent"); break;
         }
         var brush = (Brush)FindResource(color);
@@ -765,7 +791,11 @@ public partial class MainWindow : Window, IServiceHost
         }
         else StatusHalo.Opacity = 0.22;
 
-        if (_trayToggle != null) _trayToggle.Text = busy ? "停止" : "启动";
+        if (_trayToggle != null)
+        {
+            _trayToggle.Text = busy ? "停止" : "启动";
+            _trayToggle.Image = TrayGlyph(busy ? "Icon.Stop" : "Icon.Play");
+        }
         if (_tray != null) _tray.Text = $"ZERO · {title}";
     }
 
@@ -793,13 +823,13 @@ public partial class MainWindow : Window, IServiceHost
         if (full)
         {
             ModeHintBox.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF4, 0xE5));
-            ModeHintIcon.Data = (Geometry)FindResource("IcoWarn"); ModeHintIcon.Stroke = (Brush)FindResource("Orange");
+            ModeHintIcon.Data = (Geometry)FindResource("Icon.Warning"); ModeHintIcon.Stroke = (Brush)FindResource("Orange");
             ModeHint.Text = "可读写整台电脑的文件，并可运行命令、后台脚本。权限等同当前 Windows 账户，请勿泄露 Token。不需要的能力可以在「权限」中关闭。";
         }
         else
         {
             ModeHintBox.Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF5, 0xFF));
-            ModeHintIcon.Data = (Geometry)FindResource("IcoInfo"); ModeHintIcon.Stroke = (Brush)FindResource("Accent");
+            ModeHintIcon.Data = (Geometry)FindResource("Icon.Info"); ModeHintIcon.Stroke = (Brush)FindResource("Accent");
             ModeHint.Text = "只能读写下方工作空间里的文件，命令执行和后台任务全部禁用。可以在「权限」中逐项调整。";
         }
     }
@@ -889,9 +919,9 @@ public partial class MainWindow : Window, IServiceHost
 
         CopyUrl.IsEnabled = EyeUrl.IsEnabled = _publicUrl != null;
         CopyMcp.IsEnabled = EyeMcp.IsEnabled = mcp != null;
-        EyeUrl.Content = MakeIcon(_showUrl ? "IcoEyeOff" : "IcoEye", 15);
-        EyeToken.Content = MakeIcon(_showToken ? "IcoEyeOff" : "IcoEye", 15);
-        EyeMcp.Content = MakeIcon(_showMcp ? "IcoEyeOff" : "IcoEye", 15);
+        EyeUrl.Content = MakeIcon(_showUrl ? "Icon.EyeOff" : "Icon.Eye", 15);
+        EyeToken.Content = MakeIcon(_showToken ? "Icon.EyeOff" : "Icon.Eye", 15);
+        EyeMcp.Content = MakeIcon(_showMcp ? "Icon.EyeOff" : "Icon.Eye", 15);
     }
 
     void EyeUrl_Click(object s, RoutedEventArgs e) { _showUrl = !_showUrl; RefreshConnectionFields(); }
@@ -936,6 +966,206 @@ public partial class MainWindow : Window, IServiceHost
     }
 
     // ====================== 托盘与窗口 ======================
+
+    void Win_SizeChanged(object s, SizeChangedEventArgs e) => ApplySizeTier();
+    public void ApplySizeTierPublic() => ApplySizeTier();
+
+    /// <summary>仅 --snapshot-main 使用：切到治理子页、选审计筛选、或预选记忆标签。</summary>
+    public void ApplySnapshotExtras(string? govTab, string? auditFilter, string? memTagsCsv, bool openTagPopup)
+    {
+        if (!string.IsNullOrEmpty(govTab) || !string.IsNullOrEmpty(auditFilter))
+            EnsureGov().SnapshotShow(string.IsNullOrEmpty(govTab) ? "overview" : govTab, auditFilter);
+        if (!string.IsNullOrEmpty(memTagsCsv))
+        {
+            var tags = memTagsCsv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            EnsureMemory().SnapshotSelectTags(tags, openTagPopup);
+        }
+        else if (openTagPopup)
+            EnsureMemory().SnapshotSelectTags(Array.Empty<string>(), openPopup: true);
+    }
+
+
+    static bool IsSnapshotProcess()
+        => Array.Exists(Environment.GetCommandLineArgs(), a => a.StartsWith("--snapshot", StringComparison.Ordinal));
+
+    /// <summary>按壳宽对齐 a-final：&lt;1280 size-s，&lt;1500 size-m，否则 size-l（用 Shell.ActualWidth，等同原型 offsetWidth）。</summary>
+
+    void UpdateShellClip()
+    {
+        if (Shell == null || Shell.ActualWidth <= 0 || Shell.ActualHeight <= 0) return;
+        Shell.Clip = new RectangleGeometry(new Rect(0, 0, Shell.ActualWidth, Shell.ActualHeight), 12, 12);
+    }
+    void ApplySizeTier()
+    {
+        if (Shell == null) return;
+        UpdateShellClip();
+        double w = Shell.ActualWidth > 0 ? Shell.ActualWidth : ActualWidth;
+        string tier;
+        double side, padX, padY, navFs, titleFs, listCol, visionList, shotMin, gap;
+        if (w < 1280)
+        {
+            tier = "size-s"; side = 200; padX = 18; padY = 16; navFs = 13; titleFs = 17;
+            listCol = 260; visionList = 240; shotMin = 280; gap = 14;
+        }
+        else if (w < 1500)
+        {
+            tier = "size-m"; side = 220; padX = 24; padY = 20; navFs = 13.5; titleFs = 18;
+            listCol = 300; visionList = 280; shotMin = 360; gap = 16;
+        }
+        else
+        {
+            tier = "size-l"; side = 240; padX = 28; padY = 22; navFs = 14; titleFs = 19;
+            listCol = 340; visionList = 300; shotMin = 440; gap = 18;
+        }
+
+        Shell.Tag = tier;
+        SidebarCol.Width = new GridLength(side);
+
+        var res = Application.Current.Resources;
+        res["ShellTier"] = tier;
+        res["ContentPad"] = new Thickness(padX, padY, padX, padY);
+        res["NavFontSize"] = navFs;
+        res["PageTitleFontSize"] = titleFs;
+        res["ListColWidth"] = listCol;
+        res["VisionListWidth"] = visionList;
+        res["ShotMinHeight"] = shotMin;
+        res["CardGap"] = gap;
+        res["SidebarWidth"] = side;
+
+        LayoutOverview(tier, gap);
+        ApplyTierToPages(tier, listCol, visionList, shotMin, gap);
+    }
+
+    void LayoutOverview(string tier, double gap)
+    {
+        if (OvLayout == null || OvStatus == null || OvMode == null || OvConn == null || OvLogs == null) return;
+        OvLayout.RowDefinitions.Clear();
+        OvLayout.ColumnDefinitions.Clear();
+
+        void Place(FrameworkElement el, int row, int col, int rowSpan = 1, int colSpan = 1, Thickness? margin = null)
+        {
+            Grid.SetRow(el, row);
+            Grid.SetColumn(el, col);
+            Grid.SetRowSpan(el, rowSpan);
+            Grid.SetColumnSpan(el, colSpan);
+            if (margin.HasValue) el.Margin = margin.Value;
+        }
+
+        // Reset logs to 2-col template defaults then override
+        OvLogs.RowDefinitions.Clear();
+        OvLogs.ColumnDefinitions.Clear();
+
+        if (tier == "size-s")
+        {
+            // status | status
+            // mode   | conn
+            // logs   | logs   (logs internal: 2 columns)
+            OvLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            OvLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            OvLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            OvLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            OvLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            Place(OvStatus, 0, 0, 1, 2, new Thickness(0));
+            Place(OvMode, 1, 0, 1, 1, new Thickness(0, gap, gap / 2, 0));
+            Place(OvConn, 1, 1, 1, 1, new Thickness(gap / 2, gap, 0, 0));
+            Place(OvLogs, 2, 0, 1, 2, new Thickness(0, gap, 0, 0));
+            OvLogs.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            OvLogs.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(gap) });
+            OvLogs.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            OvLogs.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            if (OvLogs.Children.Count >= 2)
+            {
+                Grid.SetRow(OvLogs.Children[0], 0); Grid.SetColumn(OvLogs.Children[0], 0); Grid.SetRowSpan(OvLogs.Children[0], 1); Grid.SetColumnSpan(OvLogs.Children[0], 1);
+                Grid.SetRow(OvLogs.Children[1], 0); Grid.SetColumn(OvLogs.Children[1], 2); Grid.SetRowSpan(OvLogs.Children[1], 1); Grid.SetColumnSpan(OvLogs.Children[1], 1);
+            }
+        }
+        else
+        {
+            // status | status
+            // mode   | logs
+            // conn   | logs   (logs internal: 2 rows)
+            double left = tier == "size-l" ? 1.2 : 1.15;
+            double right = tier == "size-l" ? 0.9 : 0.85;
+            OvLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(left, GridUnitType.Star) });
+            OvLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(right, GridUnitType.Star) });
+            OvLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            if (tier == "size-m")
+            {
+                OvLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                OvLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            }
+            else
+            {
+                OvLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                OvLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            }
+            Place(OvStatus, 0, 0, 1, 2, new Thickness(0));
+            Place(OvMode, 1, 0, 1, 1, new Thickness(0, gap, gap / 2, 0));
+            Place(OvConn, 2, 0, 1, 1, new Thickness(0, gap, gap / 2, 0));
+            Place(OvLogs, 1, 1, 2, 1, new Thickness(gap / 2, gap, 0, 0));
+            OvLogs.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            OvLogs.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            OvLogs.RowDefinitions.Add(new RowDefinition { Height = new GridLength(gap) });
+            OvLogs.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            if (OvLogs.Children.Count >= 2)
+            {
+                Grid.SetRow(OvLogs.Children[0], 0); Grid.SetColumn(OvLogs.Children[0], 0); Grid.SetRowSpan(OvLogs.Children[0], 1); Grid.SetColumnSpan(OvLogs.Children[0], 1);
+                Grid.SetRow(OvLogs.Children[1], 2); Grid.SetColumn(OvLogs.Children[1], 0); Grid.SetRowSpan(OvLogs.Children[1], 1); Grid.SetColumnSpan(OvLogs.Children[1], 1);
+            }
+        }
+    }
+
+    void ApplyTierToPages(string tier, double listCol, double visionList, double shotMin, double gap)
+    {
+        foreach (var obj in new object?[] { _perms, _memory, _gov, _vision, _history })
+        {
+            if (obj is ISizeTierAware a) a.ApplySizeTier(tier, listCol, visionList, shotMin, gap);
+        }
+    }
+
+
+    /// <summary>把 Icon.* 几何渲染为托盘菜单用的 16×16 位图（描边 1.5）。</summary>
+    System.Drawing.Image? TrayGlyph(string iconKey, System.Windows.Media.Brush? brush = null)
+    {
+        try
+        {
+            if (TryFindResource(iconKey) is not System.Windows.Media.Geometry geo) return null;
+            var stroke = brush ?? new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#3A3A3C"));
+            var path = new System.Windows.Shapes.Path
+            {
+                Data = geo,
+                Stretch = System.Windows.Media.Stretch.Uniform,
+                Stroke = stroke,
+                StrokeThickness = 1.5,
+                StrokeStartLineCap = System.Windows.Media.PenLineCap.Round,
+                StrokeEndLineCap = System.Windows.Media.PenLineCap.Round,
+                StrokeLineJoin = System.Windows.Media.PenLineJoin.Round,
+                Fill = System.Windows.Media.Brushes.Transparent,
+                Width = 16,
+                Height = 16,
+                SnapsToDevicePixels = true,
+            };
+            path.Measure(new System.Windows.Size(16, 16));
+            path.Arrange(new System.Windows.Rect(0, 0, 16, 16));
+            var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(32, 32, 192, 192, System.Windows.Media.PixelFormats.Pbgra32);
+            rtb.Render(path);
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+            using var ms = new System.IO.MemoryStream();
+            enc.Save(ms);
+            ms.Position = 0;
+            return System.Drawing.Image.FromStream(ms);
+        }
+        catch { return null; }
+    }
+
+    Forms.ToolStripMenuItem TrayItem(string text, string iconKey, EventHandler onClick)
+    {
+        var it = new Forms.ToolStripMenuItem(text, TrayGlyph(iconKey), onClick);
+        it.ImageScaling = Forms.ToolStripItemImageScaling.None;
+        return it;
+    }
     void InitTray()
     {
         System.Drawing.Icon icon;
@@ -947,13 +1177,20 @@ public partial class MainWindow : Window, IServiceHost
         catch { icon = System.Drawing.SystemIcons.Application; }
 
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("显示主窗口", null, (_, _) => Dispatcher.Invoke(ShowFromTray));
-        _trayToggle = new Forms.ToolStripMenuItem("启动", null, (_, _) => Dispatcher.Invoke(() => BtnToggle_Click(this, new RoutedEventArgs())));
-        menu.Items.Add(_trayToggle);
-        menu.Items.Add("复制 MCP 地址", null, (_, _) => Dispatcher.Invoke(() => Copy(McpUrl)));
-        menu.Items.Add("打开日志", null, (_, _) => AppLog.OpenFolder());
+        menu.Items.Add(TrayItem("显示主窗口", "Icon.TrayShow", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("overview"); })));
+        menu.Items.Add(TrayItem("总览", "Icon.Overview", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("overview"); })));
+        menu.Items.Add(TrayItem("权限", "Icon.Permissions", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("perms"); })));
+        menu.Items.Add(TrayItem("记忆库", "Icon.Memory", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("memory"); })));
+        menu.Items.Add(TrayItem("治理中心", "Icon.Governance", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("gov"); })));
+        menu.Items.Add(TrayItem("视觉工作台", "Icon.Vision", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("vision"); })));
+        menu.Items.Add(TrayItem("历史记录", "Icon.History", (_, _) => Dispatcher.Invoke(() => { ShowFromTray(); Navigate("history"); })));
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(ExitApp));
+        _trayToggle = TrayItem("启动", "Icon.Play", (_, _) => Dispatcher.Invoke(() => BtnToggle_Click(this, new RoutedEventArgs())));
+        menu.Items.Add(_trayToggle);
+        menu.Items.Add(TrayItem("复制 MCP 地址", "Icon.Copy", (_, _) => Dispatcher.Invoke(() => Copy(McpUrl))));
+        menu.Items.Add(TrayItem("打开日志", "Icon.Logs", (_, _) => AppLog.OpenFolder()));
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add(TrayItem("退出", "Icon.Exit", (_, _) => Dispatcher.Invoke(ExitApp)));
 
         _tray = new Forms.NotifyIcon { Icon = icon, Text = "ZERO", Visible = true, ContextMenuStrip = menu };
         _tray.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) Dispatcher.Invoke(ShowFromTray); };
@@ -961,7 +1198,7 @@ public partial class MainWindow : Window, IServiceHost
         {
             if (!_visionToastClickedAvailable) return;
             _visionToastClickedAvailable = false;
-            Dispatcher.BeginInvoke(() => BtnVision_Click(this, new RoutedEventArgs()));
+            Dispatcher.BeginInvoke(() => { ShowFromTray(); Navigate("vision"); });
         };
     }
 
@@ -1015,5 +1252,19 @@ public partial class MainWindow : Window, IServiceHost
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
         Close();
         Application.Current.Shutdown();
+    }
+
+    public void SaveSnapshot(string path)
+    {
+        // 截整个圆角壳（含阴影外边距）
+        var root = (FrameworkElement)Content;
+        int w = Math.Max(1, (int)ActualWidth);
+        int h = Math.Max(1, (int)ActualHeight);
+        var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(w * 2, h * 2, 192, 192, PixelFormats.Pbgra32);
+        bmp.Render(root);
+        var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+        using var fs = System.IO.File.Create(path);
+        enc.Save(fs);
     }
 }

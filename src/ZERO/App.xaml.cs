@@ -41,15 +41,15 @@ public partial class App : Application
         {
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             var path = histArg["--snapshot-history=".Length..].Trim('"');
-            var w = new HistoryWindow(Services.AppSettings.Load()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
-            w.Show();
+            var page = new HistoryWindow(Services.AppSettings.Load());
+            var w = HostPageSnapshot(page);
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
             int step = 0;
             t.Tick += (_, _) =>
             {
-                if (step++ == 0) { w.SelectFirstForPreview(path.Contains("-tool") ? 0 : 2, path.Contains("-tool")); return; }
+                if (step++ == 0) { page.SelectFirstForPreview(path.Contains("-tool") ? 0 : 2, path.Contains("-tool")); return; }
                 t.Stop();
-                w.SaveSnapshot(path);
+                page.SaveSnapshot(path);
                 Shutdown();
             };
             t.Start();
@@ -61,15 +61,15 @@ public partial class App : Application
         {
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             var path = memArg["--snapshot-memory=".Length..].Trim('"');
-            var w = new MemoryWindow(Services.AppSettings.Load()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
-            w.Show();
+            var page = new MemoryWindow(Services.AppSettings.Load());
+            var w = HostPageSnapshot(page);
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
             int step = 0;
             t.Tick += (_, _) =>
             {
-                if (step++ == 0) { w.SelectFirstForPreview(); return; }
+                if (step++ == 0) { page.SelectFirstForPreview(); return; }
                 t.Stop();
-                w.SaveSnapshot(path);
+                page.SaveSnapshot(path);
                 Shutdown();
             };
             t.Start();
@@ -81,11 +81,11 @@ public partial class App : Application
         {
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             var path = permArg["--snapshot-permissions=".Length..].Trim('"');
-            var w = new PermissionWindow(Services.AppSettings.Load(), null) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
-            w.SelectTab(path.Contains("-full"));
-            w.Show();
+            var page = new PermissionWindow(Services.AppSettings.Load(), null);
+            page.SelectTab(path.Contains("-full"));
+            var w = HostPageSnapshot(page);
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
-            t.Tick += (_, _) => { t.Stop(); w.SaveSnapshot(path); Shutdown(); };
+            t.Tick += (_, _) => { t.Stop(); page.SaveSnapshot(path); Shutdown(); };
             t.Start();
             return;
         }
@@ -96,16 +96,16 @@ public partial class App : Application
         {
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             var path = govArg["--snapshot-governance=".Length..].Trim('"');
-            var w = new GovernanceWindow(Services.AppSettings.Load()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
-            w.Show();
+            var page = new GovernanceWindow(Services.AppSettings.Load());
+            var w = HostPageSnapshot(page, 1200, 800);
             var tab = new[] { "review", "tasks", "audit", "policy" }.FirstOrDefault(k => path.Contains("-" + k)) ?? "overview";
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
             int step = 0;
             t.Tick += (_, _) =>
             {
-                if (step == 0) w.SelectTab(tab);
-                else if (step == 1) w.SelectFirstForPreview();
-                else { t.Stop(); w.SaveSnapshot(path); Shutdown(); }
+                if (step == 0) page.SelectTab(tab);
+                else if (step == 1) page.SelectFirstForPreview();
+                else { t.Stop(); page.SaveSnapshot(path); Shutdown(); }
                 step++;
             };
             t.Start();
@@ -118,13 +118,52 @@ public partial class App : Application
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
             var path = visArg["--snapshot-vision=".Length..].Trim('"');
             var sel = Array.Find(e.Args, a => a.StartsWith("--select="))?["--select=".Length..].Trim('"');
-            var w = new VisionWindow(Services.AppSettings.Load(), null) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
-            w.Show();
+            var page = new VisionWindow(Services.AppSettings.Load(), null);
+            var w = HostPageSnapshot(page, 1200, 800);
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
             int step = 0;
             t.Tick += (_, _) =>
             {
-                if (step++ == 0) { w.SelectFirstForPreview(sel); return; }
+                if (step++ == 0) { page.SelectFirstForPreview(sel); return; }
+                t.Stop(); page.SaveSnapshot(path); Shutdown();
+            };
+            t.Start();
+            return;
+        }
+
+        // 调试用：ZERO.exe --snapshot-main=路径.png [--page=...] [--width=] [--height=]
+        // 可选：--gov-tab=overview|review|tasks|audit|policy  --audit-filter=trash|all|log
+        //       --memory-tags=tag1,tag2  --memory-tag-popup=1
+        var mainArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-main="));
+        if (mainArg != null)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            var path = mainArg["--snapshot-main=".Length..].Trim('"');
+            var page = Array.Find(e.Args, a => a.StartsWith("--page="))?["--page=".Length..].Trim('"') ?? "overview";
+            var govTab = Array.Find(e.Args, a => a.StartsWith("--gov-tab="))?["--gov-tab=".Length..].Trim('"');
+            var auditFilter = Array.Find(e.Args, a => a.StartsWith("--audit-filter="))?["--audit-filter=".Length..].Trim('"');
+            var memTags = Array.Find(e.Args, a => a.StartsWith("--memory-tags="))?["--memory-tags=".Length..].Trim('"');
+            bool memPopup = Array.Exists(e.Args, a => a == "--memory-tag-popup=1" || a == "--memory-tag-popup");
+            var w = new MainWindow();
+            w.WindowStartupLocation = WindowStartupLocation.Manual;
+            w.Left = -4000; w.Top = 0; w.ShowActivated = false; w.ShowInTaskbar = false;
+            var widthArg = Array.Find(e.Args, a => a.StartsWith("--width="));
+            var heightArg = Array.Find(e.Args, a => a.StartsWith("--height="));
+            if (widthArg != null && double.TryParse(widthArg["--width=".Length..], out var ww)) w.Width = ww;
+            if (heightArg != null && double.TryParse(heightArg["--height=".Length..], out var hh)) w.Height = hh;
+            w.Show();
+            w.ApplySizeTierPublic();
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+            int step = 0;
+            t.Tick += (_, _) =>
+            {
+                if (step == 0) { w.Navigate(page); step++; return; }
+                if (step == 1)
+                {
+                    w.ApplySnapshotExtras(govTab, auditFilter, memTags, memPopup);
+                    step++;
+                    return;
+                }
                 t.Stop(); w.SaveSnapshot(path); Shutdown();
             };
             t.Start();
@@ -149,5 +188,25 @@ public partial class App : Application
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         base.OnStartup(e);
         new MainWindow().Show();
+    }
+
+    static Window HostPageSnapshot(System.Windows.Controls.UserControl page, double width = 1100, double height = 720)
+    {
+        var w = new Window
+        {
+            Content = page,
+            Width = width,
+            Height = height,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -4000,
+            Top = 0,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+            AllowsTransparency = false,
+            Background = System.Windows.Media.Brushes.White,
+            ShowInTaskbar = false,
+        };
+        w.Show();
+        return w;
     }
 }

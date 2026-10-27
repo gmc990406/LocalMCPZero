@@ -5,15 +5,17 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using ZERO.Services;
 
 namespace ZERO;
 
-/// <summary>治理中心：记忆库的维护候选与 AI 结论、任务队列、审计与回收站、策略设置。</summary>
-public partial class GovernanceWindow : Window
+/// <summary>治理中心：记忆维护候选与结论、任务队列、审计与回收站、策略设置。</summary>
+public partial class GovernanceWindow : UserControl, ISizeTierAware
 {
     readonly AppSettings _settings;
+    string _tier = "size-m";
     string _tab = "overview", _candFilter = "open", _taskFilter = "active", _auditFilter = "trash";
     bool _busy;
     long _candId;
@@ -25,8 +27,7 @@ public partial class GovernanceWindow : Window
     {
         InitializeComponent();
         _settings = settings;
-        StateChanged += (_, _) => Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
-        Activated += (_, _) => { if (IsLoaded && !_busy && _tab != "policy") Reload(); };
+        IsVisibleChanged += (_, _) => { if (IsVisible && IsLoaded && !_busy && _tab != "policy") Reload(); };
         Loaded += (_, _) => Reload();
     }
 
@@ -114,7 +115,7 @@ public partial class GovernanceWindow : Window
     };
 
     bool Confirm(string title, string msg, string ok, bool danger = false) =>
-        ZeroDialog.Show(this, new DialogSpec(title, msg, danger ? DialogKind.Danger : DialogKind.Question, ok));
+        ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec(title, msg, danger ? DialogKind.Danger : DialogKind.Question, ok));
 
     /// <summary>调用 zero_gov.py 完成需要规则判断的操作，完成后刷新界面</summary>
     async Task Run(string what, Func<Task<GovernanceStore.CliResult>> op)
@@ -126,13 +127,13 @@ public partial class GovernanceWindow : Window
         {
             var r = await op();
             AppLog.Write("治理", $"{what}：{(r.Ok ? "成功" : "失败")} {r.Message}");
-            if (!r.Ok) ZeroDialog.Show(this, new DialogSpec($"{what}失败", r.Message, DialogKind.Error, "好", null));
+            if (!r.Ok) ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec($"{what}失败", r.Message, DialogKind.Error, "好", null));
             Hint(r.Ok ? $"{what}：{r.Message}" : $"{what}失败：{r.Message}", !r.Ok);
         }
         catch (Exception ex)
         {
             AppLog.Error("治理", ex);
-            ZeroDialog.Show(this, new DialogSpec($"{what}失败", ex.Message, DialogKind.Error, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec($"{what}失败", ex.Message, DialogKind.Error, "好", null));
         }
         finally { _busy = false; }
         Reload();
@@ -144,7 +145,7 @@ public partial class GovernanceWindow : Window
         catch (Exception ex)
         {
             AppLog.Error("治理", ex);
-            ZeroDialog.Show(this, new DialogSpec($"{what}失败", ex.Message, DialogKind.Error, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec($"{what}失败", ex.Message, DialogKind.Error, "好", null));
         }
         Reload();
     }
@@ -153,36 +154,77 @@ public partial class GovernanceWindow : Window
     void LoadOverview()
     {
         var o = GovernanceStore.Overview();
-        StatCards.Children.Clear();
-        void Stat(string label, long n, string? tab = null, bool warn = false, string? filter = null)
+        StatHost.Children.Clear();
+        bool narrow = _tier == "size-s";
+
+        void AddGroup(string title, (string Label, long N, string? Tab, bool Accent, bool Danger, string? Filter)[] items, int colsWide)
         {
-            var sp = new StackPanel();
-            sp.Children.Add(new TextBlock { Text = n.ToString(), FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = (Brush)FindResource(warn && n > 0 ? "Orange" : "TextPrimary") });
-            sp.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = (Brush)FindResource("TextSecondary"), Margin = new Thickness(0, 2, 0, 0) });
-            var card = new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(18, 12, 18, 12), Margin = new Thickness(0, 0, 12, 12), Width = 160, Child = sp };
-            if (tab != null)
+            var block = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+            block.Children.Add(new TextBlock
             {
-                card.Cursor = System.Windows.Input.Cursors.Hand;
-                card.ToolTip = "点击查看";
-                card.MouseLeftButtonUp += (_, _) =>
+                Text = title,
+                Style = (Style)FindResource("Caption"),
+                Margin = new Thickness(2, 0, 0, 8)
+            });
+            var grid = new UniformGrid { Columns = narrow ? 2 : colsWide };
+            foreach (var it in items)
+            {
+                Brush fg = (Brush)FindResource("TextPrimary");
+                if (it.N > 0 && it.Danger) fg = (Brush)FindResource("Red");
+                else if (it.N > 0 && it.Accent) fg = (Brush)FindResource("Accent");
+                var sp = new StackPanel();
+                sp.Children.Add(new TextBlock { Text = it.N.ToString(), FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = fg });
+                sp.Children.Add(new TextBlock { Text = it.Label, FontSize = 12, Foreground = (Brush)FindResource("TextSecondary"), Margin = new Thickness(0, 2, 0, 0), TextWrapping = TextWrapping.Wrap });
+                var card = new Border
                 {
-                    if (tab == "review" && filter != null) { _candFilter = filter; foreach (RadioButton rb in CandFilter.Children) rb.IsChecked = (string)rb.Tag == filter; }
-                    if (tab == "tasks" && filter != null) { _taskFilter = filter; foreach (RadioButton rb in TaskFilter.Children) rb.IsChecked = (string)rb.Tag == filter; }
-                    SelectTab(tab);
+                    Style = (Style)FindResource("Card"),
+                    Padding = new Thickness(16, 12, 16, 12),
+                    Margin = new Thickness(0, 0, 10, 10),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Child = sp
                 };
+                if (it.Tab != null)
+                {
+                    var tab = it.Tab; var filter = it.Filter;
+                    card.Cursor = System.Windows.Input.Cursors.Hand;
+                    card.ToolTip = "点击查看";
+                    card.MouseLeftButtonUp += (_, _) =>
+                    {
+                        if (tab == "review" && filter != null) { _candFilter = filter; foreach (RadioButton rb in CandFilter.Children) rb.IsChecked = (string)rb.Tag == filter; }
+                        if (tab == "tasks" && filter != null) { _taskFilter = filter; foreach (RadioButton rb in TaskFilter.Children) rb.IsChecked = (string)rb.Tag == filter; }
+                        if (tab == "audit")
+                        {
+                            _auditFilter = filter ?? "all";
+                            foreach (RadioButton rb in AuditFilter.Children) rb.IsChecked = (string)rb.Tag == _auditFilter;
+                        }
+                        SelectTab(tab);
+                    };
+                }
+                grid.Children.Add(card);
             }
-            StatCards.Children.Add(card);
+            block.Children.Add(grid);
+            StatHost.Children.Add(block);
         }
-        Stat("有效记忆", o.Memories, "audit");
-        Stat("置顶", o.Pinned);
-        Stat("已归档", o.Archived, "audit");
-        Stat("回收站", o.Trash, "audit");
-        Stat("待复审候选", o.CandidatesOpen, "review", true, "open");
-        Stat("待你审批的结论", o.DecisionsPending, "review", true, "decisions");
-        Stat("排队中的任务", o.TasksQueued, "tasks", false, "active");
-        Stat("执行中的任务", o.TasksActive, "tasks", false, "active");
-        Stat("待审核/待批准", o.TasksReview, "tasks", true, "attention");
-        Stat("失败的任务", o.TasksFailed, "tasks", true, "attention");
+
+        AddGroup("记忆", new (string, long, string?, bool, bool, string?)[]
+        {
+            ("有效记忆", o.Memories, "audit", false, false, "all"),
+            ("置顶", o.Pinned, null, false, false, null),
+            ("已归档", o.Archived, "audit", false, false, "all"),
+            ("回收站", o.Trash, "audit", false, false, "trash"),
+        }, 4);
+        AddGroup("审核", new (string, long, string?, bool, bool, string?)[]
+        {
+            ("待复审候选", o.CandidatesOpen, "review", true, false, "open"),
+            ("待你审批的结论", o.DecisionsPending, "review", true, false, "decisions"),
+            ("待审核/待批准", o.TasksReview, "tasks", true, false, "attention"),
+        }, 3);
+        AddGroup("任务", new (string, long, string?, bool, bool, string?)[]
+        {
+            ("排队中", o.TasksQueued, "tasks", false, false, "active"),
+            ("执行中", o.TasksActive, "tasks", false, false, "active"),
+            ("失败的任务", o.TasksFailed, "tasks", false, true, "attention"),
+        }, 3);
 
         var pol = GovernanceStore.Policy();
         bool enabled = pol.GetValueOrDefault("review.enabled") is "1" or "true";
@@ -191,7 +233,7 @@ public partial class GovernanceWindow : Window
         string next = !enabled ? "定时检查已关闭（可在「策略设置」中开启）"
             : last == null ? "ZERO 运行时会尽快进行第一次检查"
             : $"下次定时检查：{last.Value.AddDays(cycle):yyyy-MM-dd HH:mm} 之后（每 {cycle} 天）";
-        ScanInfo.Text = $"最近一次：{(o.LastScan is { } t ? t.ToString("yyyy-MM-dd HH:mm") + " · " : "")}{o.LastScanText}\n{next}\n" +
+        ScanInfo.Text = $"最近一次：{(o.LastScan is { } tscan ? tscan.ToString("yyyy-MM-dd HH:mm") + " · " : "")}{o.LastScanText}\n{next}\n" +
                         "检查只使用本地规则（不调用 AI 模型），不会修改记忆，只生成待复审的候选。";
         ScanInfo.Foreground = (Brush)FindResource(o.LastScanOk ? "TextPrimary" : "Red");
         string level = pol.GetValueOrDefault("task.level") switch { "strict" => "严格（修改类操作必须先登记任务）", "light" => "轻量（不提示登记任务）", _ => "标准（连续修改时提示登记任务，不强制）" };
@@ -401,14 +443,12 @@ public partial class GovernanceWindow : Window
     void LoadAudit()
     {
         bool log = _auditFilter == "log";
-        AuditLog.Visibility = log ? Visibility.Visible : Visibility.Collapsed;
+        AuditMasterDetail.Visibility = log ? Visibility.Collapsed : Visibility.Visible;
+        AuditLogPane.Visibility = log ? Visibility.Visible : Visibility.Collapsed;
         if (log)
         {
-            AuditList.ItemsSource = null;
-            AuditEmpty.Text = "审计日志显示在右侧\n（记忆的每次创建、修改、合并、归档、删除、恢复）";
-            AuditEmpty.Visibility = Visibility.Visible;
-            AuditDetailScroll.Visibility = AuditDetailEmpty.Visibility = Visibility.Collapsed;
             AuditLog.ItemsSource = GovernanceStore.MemoryEvents(500);
+            Dispatcher.BeginInvoke(LayoutAuditColumns);
             Hint("审计日志只追加不修改；永久删除的记忆只保留一条不含正文的记录。");
             return;
         }
@@ -581,11 +621,11 @@ public partial class GovernanceWindow : Window
                     default: v = ((TextBox)input).Text.Trim(); break;
                 }
                 if (f.Kind == "int" && (!int.TryParse(v, out var n) || n < 0 || n > 100000))
-                { ZeroDialog.Show(this, new DialogSpec("无法保存", $"「{f.Label}」需要 0~100000 之间的整数", DialogKind.Warning, "好", null)); return; }
+                { ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("无法保存", $"「{f.Label}」需要 0~100000 之间的整数", DialogKind.Warning, "好", null)); return; }
                 if (f.Kind == "float" && (!double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || d <= 0 || d > 1))
-                { ZeroDialog.Show(this, new DialogSpec("无法保存", $"「{f.Label}」需要 0~1 之间的小数", DialogKind.Warning, "好", null)); return; }
+                { ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("无法保存", $"「{f.Label}」需要 0~1 之间的小数", DialogKind.Warning, "好", null)); return; }
                 if (f.Key == "review.auto_apply" && v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(a => a is not ("keep" or "lower_priority")))
-                { ZeroDialog.Show(this, new DialogSpec("无法保存", "自动生效的结论只能是 keep、lower_priority（合并、删除等必须由你审批）", DialogKind.Warning, "好", null)); return; }
+                { ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("无法保存", "自动生效的结论只能是 keep、lower_priority（合并、删除等必须由你审批）", DialogKind.Warning, "好", null)); return; }
                 if (pol.GetValueOrDefault(f.Key, "") != v) changes[f.Key] = v;
             }
         if (changes.Count == 0) { Hint("没有修改"); return; }
@@ -598,7 +638,7 @@ public partial class GovernanceWindow : Window
         catch (Exception ex)
         {
             AppLog.Error("治理", ex);
-            ZeroDialog.Show(this, new DialogSpec("保存失败", ex.Message, DialogKind.Error, "好", null));
+            ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("保存失败", ex.Message, DialogKind.Error, "好", null));
         }
     }
 
@@ -606,15 +646,12 @@ public partial class GovernanceWindow : Window
     {
         if (!Confirm("恢复默认策略？", "任务模式、记忆维护、视觉工作台的所有策略都会恢复为默认值（不影响已有的记忆和任务）。", "恢复默认")) return;
         try { GovernanceStore.ResetPolicy(); AppLog.Write("治理", "策略已恢复默认"); }
-        catch (Exception ex) { ZeroDialog.Show(this, new DialogSpec("恢复失败", ex.Message, DialogKind.Error, "好", null)); }
+        catch (Exception ex) { ZeroDialog.Show(Window.GetWindow(this) ?? Application.Current.MainWindow, new DialogSpec("恢复失败", ex.Message, DialogKind.Error, "好", null)); }
         LoadPolicy();
         Hint("已恢复默认策略。");
     }
 
     // ====================== 窗口按钮 / 调试截图 ======================
-    void BtnClose_Click(object s, RoutedEventArgs e) => Close();
-    void BtnMin_Click(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    void BtnMax_Click(object s, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     /// <summary>调试截图：选中第一项（候选 / 任务 / 记忆）</summary>
     public void SelectFirstForPreview()
@@ -636,4 +673,38 @@ public partial class GovernanceWindow : Window
         using var fs = System.IO.File.Create(path);
         enc.Save(fs);
     }
+
+
+    void AuditLog_SizeChanged(object sender, SizeChangedEventArgs e) => LayoutAuditColumns();
+
+    void LayoutAuditColumns()
+    {
+        if (AuditLog?.View is not GridView gv || gv.Columns.Count == 0) return;
+        double fixedW = 0;
+        for (int i = 0; i < gv.Columns.Count - 1; i++)
+            fixedW += gv.Columns[i].ActualWidth > 0 ? gv.Columns[i].ActualWidth : gv.Columns[i].Width;
+        // 预留滚动条与内边距，最后一列吃剩余宽度
+        double avail = Math.Max(110, AuditLog.ActualWidth - fixedW - 28);
+        gv.Columns[^1].Width = avail;
+    }
+
+    public void ApplySizeTier(string tier, double listCol, double visionList, double shotMin, double gap)
+    {
+        _tier = tier;
+        foreach (var col in new[] { ListCol320, ListCol340, ListCol300 })
+            if (col != null) col.Width = new GridLength(listCol);
+        foreach (var gapCol in new[] { ListGap320, ListGap340, ListGap300 })
+            if (gapCol != null) gapCol.Width = new GridLength(gap);
+        if (_tab == "overview" && StatHost != null && StatHost.Children.Count > 0)
+            LoadOverview();
+        if (_tab == "audit" && _auditFilter == "log")
+            Dispatcher.BeginInvoke(LayoutAuditColumns);
+    }
+
+    public void SnapshotShow(string tab, string? auditFilter = null)
+    {
+        if (!string.IsNullOrEmpty(auditFilter)) _auditFilter = auditFilter;
+        SelectTab(tab);
+    }
 }
+
