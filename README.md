@@ -10,6 +10,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-ZERO%20v1.3.0-2ea44f?style=for-the-badge&logo=windows" alt="Download ZERO v1.3.0"></a>
+  <a href="https://github.com/gmc990406/LocalMCPZero/releases/latest"><img src="https://img.shields.io/badge/Release-v1.3.0-blue?style=for-the-badge" alt="v1.3.0 Release"></a>
+  <a href="#download"><img src="https://img.shields.io/badge/%E8%AF%A6%E6%83%85-Size%20%26%20SHA256-6e7681?style=for-the-badge" alt="Download details"></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows" alt="platform">
   <img src="https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet" alt=".NET 9">
   <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-7B3FF2" alt="MCP">
@@ -17,11 +23,38 @@
 </p>
 
 <p align="center">
-  <a href="#zh">中文</a> · <a href="#en">English</a>
+  <a href="#zh">中文</a> · <a href="#en">English</a> · <a href="#download">下载 / Download</a>
+</p>
+
+<a id="download"></a>
+
+## 📥 下载 / Download
+
+**当前版本 Current：[v1.3.0](https://github.com/gmc990406/LocalMCPZero/releases/latest)**
+
+| | |
+|---|---|
+| 直接下载 Direct | [ZERO.exe](https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe) |
+| 大小 Size | ~67.3 MB（70,558,536 bytes） |
+| SHA256 | `71F33DDB86F08E6AD70CB0B6FAA2219CABA04998ACFBC2E887020D6BECD5D479` |
+| 全部版本 All releases | [Releases](https://github.com/gmc990406/LocalMCPZero/releases) |
+
+<p align="center">
+  <img src="assets/screenshot-overview.png" width="760" alt="ZERO overview">
 </p>
 
 <p align="center">
-  <img src="assets/screenshot.png" width="760" alt="ZERO screenshot">
+  <img src="assets/screenshot-perms.png" width="370" alt="Permissions">
+  &nbsp;
+  <img src="assets/screenshot-memory.png" width="370" alt="Memory">
+</p>
+<p align="center">
+  <img src="assets/screenshot-governance.png" width="370" alt="Governance">
+  &nbsp;
+  <img src="assets/screenshot-vision.png" width="370" alt="Vision">
+</p>
+<p align="center">
+  <img src="assets/screenshot-history.png" width="760" alt="History">
 </p>
 
 ---
@@ -57,7 +90,7 @@
 
 ### 快速开始
 
-1. **下载**：从 [Releases](../../releases) 下载 `ZERO.exe`，放到一个单独的文件夹里。
+1. **下载**：点击上方绿色按钮，或从 [最新 Release](https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe) 下载 `ZERO.exe`，放到一个单独的文件夹里（详见 [下载](#download)）。
 2. **运行**：双击启动，首次运行会自动准备环境（约 1–3 分钟，视网速而定）。
 3. **选择模式**：
    - 🔒 **有限制** — 只能读写所选工作目录内的文件，不能执行命令（推荐新手）。
@@ -74,6 +107,17 @@
 > - 关闭窗口后 ZERO 会最小化到系统托盘继续运行；右键托盘图标可启动/停止、复制地址、打开日志或退出。
 > - Token 输入框右侧的 🔄 按钮可重新生成 Token（旧地址立即失效）。
 > - 命令行参数 `ZERO.exe --start` 会在环境就绪后自动启动服务，可放入「启动」文件夹实现开机自启。
+
+### 界面（v1.3）
+
+权限、记忆库、治理中心、视觉工作台、历史记录都收进**同一个主窗口**，左侧侧栏一键切换；关闭窗口会隐藏到托盘（托盘菜单也能打开各模块）。窗口宽度变化时会自动切换三档布局。
+
+### 多会话与并发（v1.3）
+
+多个 AI 客户端可以同时连接同一台 ZERO：
+
+- **会话隔离**：任务、浏览器临时配置等按真实聊天 / MCP 会话归属；识别不到会话时按单次请求隔离，避免不同对话误共享状态。
+- **并发调度**：读写、搜索、命令、记忆、窗口与浏览器工具分池限流，单个会话也有并发上限，避免某一 Agent 占满整台 ZERO。
 
 ### 提供的工具
 
@@ -92,7 +136,15 @@
 | `history_conversations` / `history_calls` | ✅ | ✅ | 查看历史对话与操作记录（只读） |
 | `history_note` | ✅ | ✅ | AI 为当前对话写标题和摘要 |
 | `memory_search` | ✅ | ✅ | 搜索记忆库（需启用记忆库） |
-| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改、删除记忆 |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改记忆，移到回收站 |
+| `memory_versions` | ✅ | ✅ | 查看记忆的历史版本 |
+| `task_create` / `task_update` / `task_get` / `task_list` / `task_complete` | ✅ | ✅ | 登记多步任务的计划和进度 |
+| `governance_status` / `governance_claim` / `governance_heartbeat` / `governance_submit` / `governance_release` | ✅ | ✅ | 领取并处理记忆维护任务 |
+| `ui_list_windows` / `ui_inspect` / `ui_wait` / `ui_compare` / `ui_request_access` | ⚙️ | ✅ | 窗口列表、控件树、等待界面变化、截图比较、申请操作授权 |
+| `ui_screenshot` / `ui_record` | ⚙️ | ✅ | 截取或录制单个窗口 |
+| `ui_action` | ⚙️ | ⚙️ | 操作已授权窗口的控件（点击、输入、选择…） |
+| `browser_open` / `browser_inspect` / `browser_close` | ⚙️ | ✅ | 用独立浏览器配置打开允许列表中的网页并查看 |
+| `browser_action` | ⚙️ | ⚙️ | 在 AI 打开的网页里点击、输入、执行脚本 |
 
 ✅ 默认开启 · ⚙️ 默认关闭，可在「权限」中开启 · — 该模式下不可用。除 `history_note` 外，每一项都可以在「权限」中关闭。
 
@@ -111,6 +163,13 @@
 | 查看操作记录 | `history_conversations` `history_calls` | 开 | 开 |
 | 搜索记忆 | `memory_search` | 开 | 开 |
 | 保存和修改记忆 | `memory_save` `memory_update` `memory_delete` | 开 | 开 |
+| 登记任务计划 | `task_*` | 开 | 开 |
+| 处理记忆维护任务 | `governance_*` | 开 | 开 |
+| 查看窗口和控件 | `ui_list_windows` `ui_inspect` `ui_wait` `ui_compare` `ui_request_access` | 关 | 开 |
+| 窗口截图和录制 | `ui_screenshot` `ui_record` | 关 | 开 |
+| 操作窗口控件 | `ui_action` | 关 | 关 |
+| 打开和查看网页 | `browser_open` `browser_inspect` `browser_close` | 关 | 开 |
+| 操作网页 | `browser_action` | 关 | 关 |
 
 - 关闭的权限对应的工具**不会提供给 AI**；ZERO 还会在服务说明里告诉 AI 哪些权限被关闭了，需要时 AI 会提示你去「权限」里开启，而不是误以为电脑没有这个能力。
 - 「有限制」模式下始终不能运行命令和后台任务（命令可以访问工作空间以外的任何文件）。
@@ -141,6 +200,26 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 - **置顶**的记忆会在 AI 连接时直接写进服务说明（无需搜索），且 AI 不能删除。
 - 每条记忆可设置可见范围：所有模式 / 仅全电脑访问 / 仅有限制模式（AI 保存时默认为当前模式）。
 - 底部开关「启用记忆库」；AI 能否搜索、保存和修改记忆在「权限」中设置。重新启动服务后生效。保存时会自动去掉 Token、密码等敏感内容。
+- 每次修改都保留历史版本；删除先进回收站，可在「治理中心 → 审核与回收站」恢复。打开「保护」的记忆不会被 AI 修改或删除。
+
+### 🧭 治理中心
+
+主界面点「治理」打开，帮你长期保持记忆库干净可靠：
+
+- **定期检查**：ZERO 每 14 天（可调）用本地规则检查记忆库——完全重复、高度相似、可能冲突、长期未被检索、过长、已过期——**不调用任何 AI 模型、不花钱**，只生成「候选」。
+- **AI 协助、你来决定**：连接的 AI 空闲时可以领取维护任务（`governance_claim`）并提交结论；保留、降权这类低风险结论按策略自动生效，合并、更正、归档、删除需要你在「记忆治理」中批准。你也可以不等 AI，直接处理候选。
+- **任务中心**：AI 登记的多步任务（`task_create`）和维护任务都在这里，可以查看进度和事件、批准、取消或重新排队。
+- **策略设置**：任务模式（轻量 / 标准 / 严格）、检查周期和阈值、自动生效范围、浏览器允许列表等，保存后立即生效。
+- 详细说明（数据结构、迁移与回滚、错误码）见 [docs/governance](docs/governance/README.md)。
+
+### 👁️ 视觉工作台
+
+主界面点「视觉」打开，让 AI 能看懂并（在你授权后）操作其他程序：
+
+- AI 可以列出窗口、读取控件结构（UI Automation）、截取或录制单个窗口、比较两次截图（需要「查看窗口和控件」「窗口截图和录制」权限）。
+- 操作控件需要开启「操作窗口控件」权限，**并且**在视觉工作台为具体窗口限时授权（15 / 30 / 60 分钟）；AI 也可以用 `ui_request_access` 申请，ZERO 会在托盘提醒你批准。
+- **紧急停止**按钮立即拒绝所有界面操作；所有操作都有审计日志。密码框、UAC / 登录等安全窗口和 ZERO 自己的窗口始终禁止。
+- 浏览器工具用独立的临时配置启动 Edge / Chrome，默认只允许访问本机地址（可在策略中加入其他主机），关闭后自动删除配置。
 
 主界面下方的日志面板会自动清理 30 分钟前的内容。
 
@@ -200,12 +279,17 @@ Cloudflare 快速隧道每次启动都会分配新域名，请重新复制 MCP �
 
 **环境**：Visual Studio 2022（17.12+，「.NET 桌面开发」工作负载）或 .NET 9 SDK。
 
-- **Visual Studio**：打开 `ZERO.sln`，按 `F5` 调试；右键项目 →「发布」→ 选择 `win-x64` 配置，输出 `dist\ZERO.exe`。
-- **命令行**：
+- **Visual Studio**：打开 `ZERO.sln`，按 `F5` 调试。
+- **命令行**（推荐，不写入 `src\ZERO\bin`）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1 [-Mode Test|Release]
 ```
+
+| 模式 | 输出 |
+|---|---|
+| `Test`（默认） | Debug 产物 → `%TEMP%\zbuild` |
+| `Release` | 单文件自包含发布 → `release\v<Version>\`（当前为 `release\v1.3.0\`） |
 
 | 调试用环境变量 | 作用 |
 |---|---|
@@ -245,7 +329,7 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 
 ### Quick start
 
-1. **Download** `ZERO.exe` from [Releases](../../releases) and put it in its own folder.
+1. **Download** `ZERO.exe` via the green button above, or from the [Latest Release](https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe), and put it in its own folder (see [Download](#download)).
 2. **Run** it. The first launch prepares the runtime automatically (1–3 minutes depending on your network).
 3. **Choose a mode**:
    - 🔒 **Restricted** — read/write files in the selected workspace only, no commands (recommended).
@@ -262,6 +346,17 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 > - Closing the window minimizes ZERO to the system tray. Right-click the tray icon to start/stop, copy the URL, open logs or quit.
 > - The 🔄 button next to the Token field regenerates the token (the old URL stops working immediately).
 > - `ZERO.exe --start` starts the service automatically once the runtime is ready — put a shortcut in the Startup folder to launch on boot.
+
+### UI (v1.3)
+
+Permissions, Memory, Governance, Vision and History live in **one main window** with a left sidebar. Closing the window hides to the tray (tray menu opens each module). The layout switches across three size tiers as you resize.
+
+### Multi-session & concurrency (v1.3)
+
+Multiple AI clients can talk to the same ZERO at once:
+
+- **Session isolation**: tasks and temporary browser profiles belong to a real chat / MCP session; unidentified calls stay per-request so conversations do not share state by accident.
+- **Parallel scheduler**: read/write/search/command/memory/UI/browser tools run in separate pools with per-session caps, so one Agent cannot saturate ZERO.
 
 ### Tools
 
@@ -280,7 +375,15 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 | `history_conversations` / `history_calls` | ✅ | ✅ | Browse past conversations and tool calls (read-only) |
 | `history_note` | ✅ | ✅ | Let the AI write a title and summary for the current conversation |
 | `memory_search` | ✅ | ✅ | Search the memory library (when memory is enabled) |
-| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save, edit, delete memories |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save and edit memories, move to trash |
+| `memory_versions` | ✅ | ✅ | Version history of a memory |
+| `task_create` / `task_update` / `task_get` / `task_list` / `task_complete` | ✅ | ✅ | Register plans and progress of multi-step tasks |
+| `governance_status` / `governance_claim` / `governance_heartbeat` / `governance_submit` / `governance_release` | ✅ | ✅ | Claim and process memory maintenance tasks |
+| `ui_list_windows` / `ui_inspect` / `ui_wait` / `ui_compare` / `ui_request_access` | ⚙️ | ✅ | Window list, control tree, wait for UI changes, compare captures, request control access |
+| `ui_screenshot` / `ui_record` | ⚙️ | ✅ | Capture or record a single window |
+| `ui_action` | ⚙️ | ⚙️ | Operate controls of a window you granted (click, type, select…) |
+| `browser_open` / `browser_inspect` / `browser_close` | ⚙️ | ✅ | Open allow-listed pages in an isolated browser profile and inspect them |
+| `browser_action` | ⚙️ | ⚙️ | Click, type and run scripts in the page the AI opened |
 
 ✅ on by default · ⚙️ off by default, can be enabled in Permissions · — not available in this mode. Everything except `history_note` can be turned off in Permissions.
 
@@ -299,6 +402,13 @@ Click "权限" (Permissions) in the main window to choose which capabilities the
 | View history | `history_conversations` `history_calls` | on | on |
 | Search memory | `memory_search` | on | on |
 | Save & edit memory | `memory_save` `memory_update` `memory_delete` | on | on |
+| Register tasks | `task_*` | on | on |
+| Memory maintenance | `governance_*` | on | on |
+| View windows & controls | `ui_list_windows` `ui_inspect` `ui_wait` `ui_compare` `ui_request_access` | off | on |
+| Window capture & recording | `ui_screenshot` `ui_record` | off | on |
+| Operate window controls | `ui_action` | off | off |
+| Open & view web pages | `browser_open` `browser_inspect` `browser_close` | off | on |
+| Operate web pages | `browser_action` | off | off |
 
 - Tools of a disabled permission are **not offered to the AI**. ZERO also tells the AI which permissions are off, so it asks you to enable them instead of assuming the computer can't do it.
 - Restricted mode can never run commands or background jobs (a command can reach files outside the workspace).
@@ -329,6 +439,26 @@ Long-term memory shared by all AI clients (`%LOCALAPPDATA%\ZERO\memory.db`, neve
 - **Pinned** memories are included in the server instructions on every connection (no search needed) and cannot be deleted by AI.
 - Each memory has a visibility scope: all modes / full access only / restricted only (AI-saved memories default to the current mode).
 - Switch: "Enable memory"; whether AI can search / save / edit memories is set in Permissions. Takes effect after restarting the service. Tokens and passwords are scrubbed on save.
+- Every change keeps a version; deletions go to the trash and can be restored in "治理中心 → 审核与回收站". **Protected** memories cannot be edited or deleted by AI.
+
+### 🧭 Governance center
+
+Click "治理" (Governance) in the main window:
+
+- **Periodic review**: every 14 days (configurable) ZERO checks the memory library with local rules — exact duplicates, near duplicates, possible conflicts, never retrieved, too long, expired. **No AI model is called and nothing costs money**; it only creates *candidates*.
+- **AI helps, you decide**: connected AIs can claim maintenance tasks when idle (`governance_claim`) and submit conclusions. Low-risk ones (keep, lower priority) apply automatically per policy; merge, correct, archive and delete need your approval. You can also handle candidates yourself.
+- **Task center**: multi-step tasks registered by AI (`task_create`) and maintenance tasks, with progress, events, approve / cancel / requeue.
+- **Policy**: task mode (light / standard / strict), review cycle and thresholds, auto-apply scope, browser allow list — effective immediately after saving.
+- Details (schema, migration & rollback, error codes): [docs/governance](docs/governance/README.md).
+
+### 👁️ Vision workbench
+
+Click "视觉" (Vision) in the main window:
+
+- AI can list windows, read the control tree (UI Automation), capture or record a single window and compare captures (permissions "View windows & controls", "Window capture & recording").
+- Operating controls needs the "Operate window controls" permission **and** a time-limited grant (15 / 30 / 60 min) for that specific window in the workbench; AI can request one with `ui_request_access` and ZERO notifies you from the tray.
+- **Emergency stop** rejects all UI actions immediately; every action is audited. Password fields, UAC / sign-in windows and ZERO's own windows are always off-limits.
+- Browser tools launch Edge / Chrome with an isolated temporary profile, allowing only local addresses by default (add hosts in Policy); the profile is deleted on close.
 
 The log panels in the main window automatically drop entries older than 30 minutes.
 
@@ -388,12 +518,17 @@ No. ZERO uses its own portable Python under `runtime\` in the app folder. Delete
 
 **Requirements**: Visual Studio 2022 (17.12+, ".NET desktop development" workload) or the .NET 9 SDK.
 
-- **Visual Studio**: open `ZERO.sln` and press `F5`. To publish, right-click the project → **Publish** → `win-x64` profile; output goes to `dist\ZERO.exe`.
-- **Command line**:
+- **Visual Studio**: open `ZERO.sln` and press `F5`.
+- **Command line** (preferred; does not write into `src\ZERO\bin`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1 [-Mode Test|Release]
 ```
+
+| Mode | Output |
+|---|---|
+| `Test` (default) | Debug build → `%TEMP%\zbuild` |
+| `Release` | single-file self-contained → `release\v<Version>\` (currently `release\v1.3.0\`) |
 
 | Debug env var | Effect |
 |---|---|
@@ -449,12 +584,15 @@ ZERO/
 ├─ ZERO.sln
 ├─ build.ps1                      一键发布 · one-click publish
 ├─ assets/                        Logo 与截图 · logo & screenshots
+├─ docs/governance/               治理中心与视觉工作台说明 · governance & vision docs
 └─ src/ZERO/
    ├─ App.xaml(.cs)               启动、单实例、全局样式 · startup, single instance, styles
-   ├─ MainWindow.xaml(.cs)        主界面与托盘 · main window & tray
+   ├─ MainWindow.xaml(.cs)        单主壳侧栏导航与托盘 · single-shell sidebar & tray
    ├─ HistoryWindow.xaml(.cs)     历史记录窗口 · history window
    ├─ MemoryWindow.xaml(.cs)      记忆库窗口 · memory window
    ├─ PermissionWindow.xaml(.cs)  权限窗口 · permissions window
+   ├─ GovernanceWindow.xaml(.cs)  治理中心 · governance center
+   ├─ VisionWindow.xaml(.cs)      视觉工作台 · vision workbench
    ├─ Controls/ZeroDialog.xaml    统一风格的对话框 · styled dialogs
    ├─ Services/
    │  ├─ EnvironmentSetup.cs      运行环境自动安装 · runtime auto-setup
@@ -463,9 +601,15 @@ ZERO/
    │  ├─ HistoryStore.cs          历史记录数据库 · history database (SQLite)
    │  ├─ MemoryStore.cs           记忆库数据库 · memory database (SQLite)
    │  ├─ Permissions.cs           权限定义与默认值 · permission definitions & defaults
+   │  ├─ SchemaMigrator.cs        数据库迁移（备份 + 事务） · schema migration
+   │  ├─ GovernanceStore.cs       治理数据与策略 · governance data & policy
+   │  ├─ UiaProvider.cs           UI Automation / 截图 / 输入（--uia-helper 子进程） · UIA helper
    │  └─ AppLog.cs                文件日志 · file logging
    ├─ Resources/
    │  ├─ server.py                MCP 服务（嵌入资源） · MCP server (embedded)
+   │  ├─ zero_gov.py              记忆治理与任务 · memory governance & tasks
+   │  ├─ zero_ui.py               视觉工作台与浏览器工具 · window & browser tools
+   │  ├─ zero_schema.json         数据库结构与策略默认值 · schema & policy defaults
    │  └─ app.ico
    └─ Properties/PublishProfiles/win-x64.pubxml
 ```

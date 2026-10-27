@@ -10,7 +10,7 @@
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <AssemblyName>ZERO</AssemblyName>
     <RootNamespace>ZERO</RootNamespace>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Product>ZERO</Product>
     <Company>GMC</Company>
     <Authors>GMC</Authors>
@@ -32,6 +32,10 @@
   <ItemGroup>
     <!-- MCP 服务脚本以嵌入资源形式打包进 exe，运行时释放到 runtime\server.py -->
     <EmbeddedResource Include="Resources\server.py" LogicalName="server.py" />
+    <!-- server.py 的模块：智能治理（任务/记忆维护）、视觉工作台、两端共用的数据库结构定义 -->
+    <EmbeddedResource Include="Resources\zero_gov.py" LogicalName="zero_gov.py" />
+    <EmbeddedResource Include="Resources\zero_ui.py" LogicalName="zero_ui.py" />
+    <EmbeddedResource Include="Resources\zero_schema.json" LogicalName="zero_schema.json" />
     <Resource Include="Resources\app.ico" />
     <None Include="Properties\PublishProfiles\*.pubxml" />
   </ItemGroup>

@@ -1,0 +1,28 @@
+<UserControl x:Class="ZERO.SearchBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FontFamily="{StaticResource UiFont}"
+             UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Grid MinHeight="32">
+            <TextBox x:Name="Box" Style="{StaticResource EditBox}" Padding="32,7,30,7"
+                     VerticalContentAlignment="Center"
+                     TextChanged="Box_TextChanged" KeyDown="Box_KeyDown"/>
+            <Path Style="{StaticResource IconPresenter}" Stroke="{StaticResource TextTertiary}" Width="13" Height="13"
+                  HorizontalAlignment="Left" Margin="12,0,0,0" Data="{StaticResource Icon.Search}" IsHitTestVisible="False"/>
+            <TextBlock x:Name="HintBlock" FontSize="12.5" Foreground="{StaticResource TextTertiary}"
+                       VerticalAlignment="Center" Margin="34,0,0,0" IsHitTestVisible="False"/>
+            <Button x:Name="BtnClear" Style="{StaticResource IconButton}" Width="26" Height="26"
+                    HorizontalAlignment="Right" Margin="0,0,4,0" ToolTip="清除"
+                    Visibility="Collapsed" Click="Clear_Click">
+                <Path Style="{StaticResource IconPresenter}" Width="11" Height="11" Data="{StaticResource Icon.Close}"/>
+            </Button>
+        </Grid>
+        <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Content="搜索"
+                Padding="14,6" Margin="8,0,0,0" VerticalAlignment="Center" Click="Search_Click"/>
+    </Grid>
+</UserControl>

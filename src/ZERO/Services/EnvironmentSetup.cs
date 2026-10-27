@@ -73,12 +73,22 @@ public sealed class EnvironmentSetup
         Http.DefaultRequestHeaders.UserAgent.ParseAdd("ZERO/1.0");
     }
 
-    /// <summary>每次启动都用内置的最新 server.py 覆盖。</summary>
-    public void WriteServerScript()
+    /// <summary>每次启动都用内置的最新脚本覆盖（server.py 及其模块：治理、视觉工作台、数据库结构）。</summary>
+    public void WriteServerScript() => WriteScripts();
+
+    public static readonly string[] Scripts = { "server.py", "zero_gov.py", "zero_ui.py", "zero_schema.json" };
+
+    public void WriteScripts()
     {
-        using var s = typeof(EnvironmentSetup).Assembly.GetManifestResourceStream("server.py")!;
-        using var f = File.Create(ServerPy);
-        s.CopyTo(f);
+        foreach (var name in Scripts)
+        {
+            using var s = typeof(EnvironmentSetup).Assembly.GetManifestResourceStream(name);
+            if (s == null) { Trace($"缺少内置资源 {name}"); continue; }
+            var path = Path.Combine(RuntimeDir, name);
+            var tmp = path + ".tmp";
+            using (var f = File.Create(tmp)) s.CopyTo(f);
+            File.Move(tmp, path, true);   // 先写临时文件再替换，避免服务读取到写了一半的脚本
+        }
     }
 
     // ---------------- Python ----------------

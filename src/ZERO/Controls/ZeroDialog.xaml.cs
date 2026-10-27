@@ -17,11 +17,6 @@ public sealed record DialogSpec(string Title, string Message, DialogKind Kind = 
 /// <summary>与 ZERO 界面风格一致的对话框，用来替代系统 MessageBox。</summary>
 public partial class ZeroDialog : Window
 {
-    static readonly Geometry GeoQuestion = Geometry.Parse(
-        "M2,12 A10,10 0 1 0 22,12 A10,10 0 1 0 2,12 Z M9.3,9.4 A2.8,2.8 0 1 1 13.4,11.9 C12.5,12.4 12,13 12,14 M12,17.4 L12,17.5");
-    static readonly Geometry GeoError = Geometry.Parse(
-        "M2,12 A10,10 0 1 0 22,12 A10,10 0 1 0 2,12 Z M9,9 L15,15 M15,9 L9,15");
-
     readonly DialogSpec _spec;
     bool _closing;
 
@@ -39,11 +34,11 @@ public partial class ZeroDialog : Window
 
         var (color, glyph) = spec.Kind switch
         {
-            DialogKind.Question => (Rgb(0x007AFF), GeoQuestion),
-            DialogKind.Warning => (Rgb(0xFF9F0A), (Geometry)FindResource("IcoWarn")),
-            DialogKind.Danger => (Rgb(0xFF3B30), (Geometry)FindResource("IcoWarn")),
-            DialogKind.Error => (Rgb(0xFF3B30), GeoError),
-            _ => (Rgb(0x007AFF), (Geometry)FindResource("IcoInfo")),
+            DialogKind.Question => (Rgb(0x007AFF), (Geometry)FindResource("Icon.Info")),
+            DialogKind.Warning => (Rgb(0xFF9F0A), (Geometry)FindResource("Icon.Warning")),
+            DialogKind.Danger => (Rgb(0xFF3B30), (Geometry)FindResource("Icon.Warning")),
+            DialogKind.Error => (Rgb(0xFF3B30), (Geometry)FindResource("Icon.Error")),
+            _ => (Rgb(0x007AFF), (Geometry)FindResource("Icon.Info")),
         };
         IconBadge.Background = new SolidColorBrush(Color.FromArgb(0x1F, color.R, color.G, color.B));
         IconGlyph.Stroke = new SolidColorBrush(color);
