@@ -1,0 +1,92 @@
+{
+  "_comment": "ZERO 数据库结构与治理策略默认值（Python 服务和 WPF 共用同一份定义，修改时只改这里）。迁移规则：按 v 递增执行 sql；ALTER TABLE ADD COLUMN 遇到 duplicate column 视为已完成；升级前先备份。",
+  "memory": {
+    "version": 2,
+    "base": [
+      "CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT 'all', source TEXT NOT NULL DEFAULT '', source_conv INTEGER NOT NULL DEFAULT 0, created REAL NOT NULL, updated REAL NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, hits INTEGER NOT NULL DEFAULT 0, last_used REAL NOT NULL DEFAULT 0)",
+      "CREATE INDEX IF NOT EXISTS ix_mem_updated ON memories(updated)"
+    ],
+    "steps": [
+      {
+        "v": 2,
+        "note": "记忆生命周期：版本、软删除、归档、降权、保护、审查候选与决策、关联、审计事件",
+        "sql": [
+          "ALTER TABLE memories ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
+          "ALTER TABLE memories ADD COLUMN protected INTEGER NOT NULL DEFAULT 0",
+          "ALTER TABLE memories ADD COLUMN archived_at REAL NOT NULL DEFAULT 0",
+          "ALTER TABLE memories ADD COLUMN deleted_at REAL NOT NULL DEFAULT 0",
+          "ALTER TABLE memories ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+          "ALTER TABLE memories ADD COLUMN quality_state TEXT NOT NULL DEFAULT ''",
+          "ALTER TABLE memories ADD COLUMN expires_at REAL NOT NULL DEFAULT 0",
+          "ALTER TABLE memories ADD COLUMN merged_into INTEGER NOT NULL DEFAULT 0",
+          "CREATE TABLE IF NOT EXISTS memory_versions(id INTEGER PRIMARY KEY AUTOINCREMENT, memory_id INTEGER NOT NULL, revision INTEGER NOT NULL, content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT 'all', pinned INTEGER NOT NULL DEFAULT 0, protected INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'active', changed_at REAL NOT NULL, actor_type TEXT NOT NULL DEFAULT 'system', actor TEXT NOT NULL DEFAULT '', action TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', UNIQUE(memory_id, revision))",
+          "CREATE INDEX IF NOT EXISTS ix_memver_mem ON memory_versions(memory_id, revision)",
+          "CREATE TABLE IF NOT EXISTS memory_events(event_id INTEGER PRIMARY KEY AUTOINCREMENT, memory_id INTEGER NOT NULL DEFAULT 0, task_id TEXT NOT NULL DEFAULT '', event_type TEXT NOT NULL, actor_type TEXT NOT NULL DEFAULT 'system', actor_display TEXT NOT NULL DEFAULT '', before_revision INTEGER NOT NULL DEFAULT 0, after_revision INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'ok', detail TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL)",
+          "CREATE INDEX IF NOT EXISTS ix_memev_mem ON memory_events(memory_id, created_at)",
+          "CREATE INDEX IF NOT EXISTS ix_memev_time ON memory_events(created_at)",
+          "CREATE TABLE IF NOT EXISTS memory_review_candidates(candidate_id INTEGER PRIMARY KEY AUTOINCREMENT, memory_ids_json TEXT NOT NULL, category TEXT NOT NULL, signals_json TEXT NOT NULL DEFAULT '{}', risk_level TEXT NOT NULL DEFAULT 'low', created_at REAL NOT NULL, updated_at REAL NOT NULL, next_check_at REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open', scope TEXT NOT NULL DEFAULT 'all', dedupe_key TEXT NOT NULL, task_id TEXT NOT NULL DEFAULT '', revisions_json TEXT NOT NULL DEFAULT '{}', UNIQUE(dedupe_key))",
+          "CREATE INDEX IF NOT EXISTS ix_memcand_status ON memory_review_candidates(status, created_at)",
+          "CREATE TABLE IF NOT EXISTS memory_review_decisions(decision_id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id INTEGER NOT NULL DEFAULT 0, task_id TEXT NOT NULL DEFAULT '', action TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}', reason TEXT NOT NULL DEFAULT '', confidence REAL NOT NULL DEFAULT 0, evidence TEXT NOT NULL DEFAULT '', impact TEXT NOT NULL DEFAULT '', actor_type TEXT NOT NULL DEFAULT 'ai', actor_display TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'proposed', risk_level TEXT NOT NULL DEFAULT 'low', expected_json TEXT NOT NULL DEFAULT '{}', idem_key TEXT, scope TEXT NOT NULL DEFAULT 'all', created_at REAL NOT NULL, decided_at REAL NOT NULL DEFAULT 0, decided_by TEXT NOT NULL DEFAULT '', result_json TEXT NOT NULL DEFAULT '{}', UNIQUE(idem_key))",
+          "CREATE INDEX IF NOT EXISTS ix_memdec_status ON memory_review_decisions(status, created_at)",
+          "CREATE TABLE IF NOT EXISTS memory_relations(id INTEGER PRIMARY KEY AUTOINCREMENT, from_id INTEGER NOT NULL, to_id INTEGER NOT NULL, kind TEXT NOT NULL, created_at REAL NOT NULL, source TEXT NOT NULL DEFAULT '', UNIQUE(from_id, to_id, kind))",
+          "INSERT OR IGNORE INTO memory_versions(memory_id, revision, content, tags, scope, pinned, protected, state, changed_at, actor_type, actor, action, reason) SELECT id, 1, content, tags, scope, pinned, 0, 'active', updated, 'system', 'migration', 'baseline', '升级到 v2 时的原始内容' FROM memories"
+        ]
+      }
+    ]
+  },
+  "governance": {
+    "version": 1,
+    "base": [],
+    "steps": [
+      {
+        "v": 1,
+        "note": "治理任务队列、租约、策略设置、窗口授权、操作锁、视觉操作日志、扫描记录",
+        "sql": [
+          "CREATE TABLE IF NOT EXISTS governance_tasks(id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}', state TEXT NOT NULL DEFAULT 'queued', priority INTEGER NOT NULL DEFAULT 0, scope TEXT NOT NULL DEFAULT 'all', created_at REAL NOT NULL, updated_at REAL NOT NULL, due_at REAL NOT NULL DEFAULT 0, claimed_by TEXT NOT NULL DEFAULT '', claimed_key TEXT NOT NULL DEFAULT '', lease_token TEXT NOT NULL DEFAULT '', lease_until REAL NOT NULL DEFAULT 0, heartbeat_at REAL NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3, idempotency_key TEXT, related_conv_id INTEGER NOT NULL DEFAULT 0, result_json TEXT NOT NULL DEFAULT '{}', last_error TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1, created_by TEXT NOT NULL DEFAULT '', level TEXT NOT NULL DEFAULT 'standard', approval TEXT NOT NULL DEFAULT 'none', phase TEXT NOT NULL DEFAULT '', plan_json TEXT NOT NULL DEFAULT '[]', activity_calls INTEGER NOT NULL DEFAULT 0, UNIQUE(idempotency_key))",
+          "CREATE INDEX IF NOT EXISTS ix_task_state ON governance_tasks(state, priority, created_at)",
+          "CREATE INDEX IF NOT EXISTS ix_task_key ON governance_tasks(claimed_key, state)",
+          "CREATE TABLE IF NOT EXISTS task_events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, ts REAL NOT NULL, event TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '')",
+          "CREATE INDEX IF NOT EXISTS ix_taskev_task ON task_events(task_id, ts)",
+          "CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated REAL NOT NULL DEFAULT 0)",
+          "CREATE TABLE IF NOT EXISTS ui_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, mode TEXT NOT NULL, hwnd INTEGER NOT NULL DEFAULT 0, pid INTEGER NOT NULL DEFAULT 0, process TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', allow_control INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, expires_at REAL NOT NULL, revoked_at REAL NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '')",
+          "CREATE TABLE IF NOT EXISTS ui_requests(id INTEGER PRIMARY KEY AUTOINCREMENT, mode TEXT NOT NULL, hwnd INTEGER NOT NULL DEFAULT 0, pid INTEGER NOT NULL DEFAULT 0, process TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', client TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, status TEXT NOT NULL DEFAULT 'pending', decided_at REAL NOT NULL DEFAULT 0)",
+          "CREATE TABLE IF NOT EXISTS ui_locks(hwnd INTEGER PRIMARY KEY, holder TEXT NOT NULL, holder_display TEXT NOT NULL DEFAULT '', acquired_at REAL NOT NULL, until REAL NOT NULL)",
+          "CREATE TABLE IF NOT EXISTS ui_actions(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, client TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT '', tool TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', action TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL DEFAULT 1, detail TEXT NOT NULL DEFAULT '')",
+          "CREATE INDEX IF NOT EXISTS ix_uiact_ts ON ui_actions(ts)",
+          "CREATE TABLE IF NOT EXISTS scan_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, started REAL NOT NULL, finished REAL NOT NULL DEFAULT 0, ok INTEGER NOT NULL DEFAULT 0, trigger TEXT NOT NULL DEFAULT '', stats_json TEXT NOT NULL DEFAULT '{}', error TEXT NOT NULL DEFAULT '')"
+        ]
+      }
+    ]
+  },
+  "policy_defaults": {
+    "task.level": "standard",
+    "task.strict_tools": "run_command,start_job,stop_job,write_file,edit_file,ui_action,browser_action",
+    "task.require_approval": "0",
+    "task.lease_minutes": "120",
+    "task.hint_writes": "6",
+    "review.enabled": "1",
+    "review.cycle_days": "14",
+    "review.inactive_days": "90",
+    "review.stale_days": "180",
+    "review.max_len": "600",
+    "review.similarity": "0.8",
+    "review.batch_limit": "50",
+    "review.recheck_days": "30",
+    "review.protected_tags": "重要,保护,protected,keep",
+    "review.auto_apply": "keep,lower_priority",
+    "review.passive_hint": "1",
+    "review.lease_minutes": "15",
+    "review.max_attempts": "3",
+    "review.scan_max_items": "5000",
+    "ui.stop": "0",
+    "ui.grant_minutes": "30",
+    "ui.max_actions_per_min": "30",
+    "ui.max_captures_per_min": "40",
+    "ui.record_max_seconds": "15",
+    "ui.capture_keep": "30",
+    "ui.lock_seconds": "60",
+    "browser.allow": "localhost,127.0.0.1,[::1]",
+    "browser.headless": "1",
+    "hint.minutes": "30"
+  }
+}

@@ -148,17 +148,29 @@ public partial class PermissionWindow : Window
             {
                 enabled = false; note = "记忆库已关闭，可在「记忆库」窗口底部开启。";
             }
-            else if (p.Key == "memory_write" && !Permissions.IsAllowed(_settings, _full, "memory_read"))
+            else if (p.Key == "governance" && !_settings.MemoryEnabled)
             {
-                enabled = false; note = "需要先开启「搜索记忆」。";
+                enabled = false; note = "记忆库已关闭，可在「记忆库」窗口底部开启。";
+            }
+            else if (Permissions.MissingDependency(_settings, _full, p.Key) is { } dep)
+            {
+                enabled = false; note = $"需要先开启「{dep.Title}」。";
             }
             else if (p.Key == "history" && !_settings.HistoryEnabled)
             {
                 enabled = false; note = "没有在记录操作历史，可在「历史记录」窗口底部开启。";
             }
-            else if (!_full && allowed && p.Key is "system" or "screenshot")
+            else if (!_full && allowed && p.Key is "system" or "screenshot" or "ui_read" or "ui_capture")
             {
                 warn = true; note = "开启后 AI 能看到工作空间以外的信息。";
+            }
+            else if (allowed && p.Key is "ui_control")
+            {
+                warn = true; note = "还需要在「视觉工作台」里对具体窗口授权；登录、UAC 等安全窗口始终禁止操作。";
+            }
+            else if (allowed && p.Key is "browser_control")
+            {
+                warn = true; note = "只能操作 AI 用 browser_open 打开的独立浏览器，网址受允许列表限制（治理中心 → 策略设置）。";
             }
 
             r.Switch.IsChecked = enabled && allowed;

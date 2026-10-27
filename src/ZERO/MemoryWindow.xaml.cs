@@ -111,6 +111,8 @@ public partial class MemoryWindow : Window
             MemActions.Visibility = Visibility.Visible;
             PinIcon.Stroke = m.Pinned ? (Brush)FindResource("Accent") : (Brush)FindResource("TextSecondary");
             BtnPin.ToolTip = m.Pinned ? "取消置顶" : "置顶：AI 连接时直接告诉它（无需搜索），且 AI 不能删除";
+            ProtectIcon.Stroke = m.Protected ? (Brush)FindResource("Accent") : (Brush)FindResource("TextSecondary");
+            BtnProtect.ToolTip = m.Protected ? "取消保护" : "受保护：AI 不能删除，记忆维护时不会因为长期未用被列为候选";
             if (!ContentEdit.IsKeyboardFocusWithin) ContentEdit.Text = m.Content;
             if (!TagsEdit.IsKeyboardFocusWithin) TagsEdit.Text = m.Tags;
             SetScopeButtons(m.Scope);
@@ -185,11 +187,19 @@ public partial class MemoryWindow : Window
         Reload(id);
     }
 
+    void Protect_Click(object s, RoutedEventArgs e)
+    {
+        if (_mem == null) return;
+        var (id, on) = (_mem.Id, !_mem.Protected);
+        Try(() => MemoryStore.SetProtected(id, on));
+        Reload(id);
+    }
+
     void Delete_Click(object s, RoutedEventArgs e)
     {
         if (_mem == null) return;
-        if (!ZeroDialog.Show(this, new DialogSpec("删除这条记忆？", $"「{Short(_mem.FirstLine)}」将被永久删除，AI 以后也搜不到它。",
-                DialogKind.Danger, "删除"))) return;
+        if (!ZeroDialog.Show(this, new DialogSpec("把这条记忆移到回收站？", $"「{Short(_mem.FirstLine)}」会移到回收站，AI 以后搜不到它。\n可以在「治理 → 审核与回收站」中恢复或永久删除。",
+                DialogKind.Danger, "移到回收站"))) return;
         var id = _mem.Id;
         Try(() => MemoryStore.Delete(id));
         _mem = null;

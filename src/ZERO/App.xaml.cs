@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Windows;
 
@@ -10,6 +11,16 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // MCP 服务的界面自动化辅助进程：ZERO.exe --uia-helper（标准输入/输出逐行 JSON，不显示窗口、不占用单实例锁）
+        if (Array.IndexOf(e.Args, "--uia-helper") >= 0)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            int code = 1;
+            try { code = Services.UiaProvider.HelperMain(); }
+            catch (Exception ex) { Services.AppLog.Error("界面自动化", ex); }
+            Shutdown(code);
+            return;
+        }
         // 调试用：ZERO.exe --snapshot-dialog=目录  把各个对话框渲染为 PNG 后退出（不占用单实例锁）
         var dlgArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-dialog="));
         if (dlgArg != null)
@@ -75,6 +86,47 @@ public partial class App : Application
             w.Show();
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
             t.Tick += (_, _) => { t.Stop(); w.SaveSnapshot(path); Shutdown(); };
+            t.Start();
+            return;
+        }
+        // 调试用：ZERO.exe --snapshot-governance=路径.png（文件名含 -review / -tasks / -audit / -policy 时显示对应页签；
+        // 可用环境变量 ZERO_MEMORY_DB、ZERO_GOV_DB 指定测试数据库）
+        var govArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-governance="));
+        if (govArg != null)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            var path = govArg["--snapshot-governance=".Length..].Trim('"');
+            var w = new GovernanceWindow(Services.AppSettings.Load()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
+            w.Show();
+            var tab = new[] { "review", "tasks", "audit", "policy" }.FirstOrDefault(k => path.Contains("-" + k)) ?? "overview";
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+            int step = 0;
+            t.Tick += (_, _) =>
+            {
+                if (step == 0) w.SelectTab(tab);
+                else if (step == 1) w.SelectFirstForPreview();
+                else { t.Stop(); w.SaveSnapshot(path); Shutdown(); }
+                step++;
+            };
+            t.Start();
+            return;
+        }
+        // 调试用：ZERO.exe --snapshot-vision=路径.png [--select=标题关键字]
+        var visArg = Array.Find(e.Args, a => a.StartsWith("--snapshot-vision="));
+        if (visArg != null)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            var path = visArg["--snapshot-vision=".Length..].Trim('"');
+            var sel = Array.Find(e.Args, a => a.StartsWith("--select="))?["--select=".Length..].Trim('"');
+            var w = new VisionWindow(Services.AppSettings.Load(), null) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -4000, Top = 0, ShowActivated = false };
+            w.Show();
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+            int step = 0;
+            t.Tick += (_, _) =>
+            {
+                if (step++ == 0) { w.SelectFirstForPreview(sel); return; }
+                t.Stop(); w.SaveSnapshot(path); Shutdown();
+            };
             t.Start();
             return;
         }

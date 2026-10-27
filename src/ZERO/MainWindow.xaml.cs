@@ -58,7 +58,7 @@ public partial class MainWindow : Window, IServiceHost
             Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
             if (WindowState == WindowState.Minimized) HideToTray();
         };
-        Loaded += async (_, _) => { InitTray(); StartMaintenanceTimers(); StartSnapshotIfRequested(); await RunSetupAsync(); };
+        Loaded += async (_, _) => { InitTray(); StartMaintenanceTimers(); InitGovernance(); StartSnapshotIfRequested(); await RunSetupAsync(); };
     }
 
     // 调试用：ZERO.exe --snapshot=路径  每 2 秒把窗口画面保存为图片（锁屏时也可用）
@@ -371,6 +371,10 @@ public partial class MainWindow : Window, IServiceHost
             ["MCP_MEMORY_DB"] = _settings.MemoryEnabled ? MemoryStore.DbPath : "",
             ["MCP_MEMORY_WRITE"] = _settings.MemoryEnabled && Permissions.IsEffective(_settings, full, "memory_write") ? "1" : "0",
             ["MCP_PERMS"] = Permissions.ToEnv(_settings, full),
+            // 智能治理：任务队列、策略、窗口授权（与界面共用）；视觉工作台通过 ZERO.exe --uia-helper 读取控件树和操作界面
+            ["MCP_GOV_DB"] = _govReady ? GovernanceStore.DbPath : "",
+            ["MCP_ZERO_EXE"] = Environment.ProcessPath ?? "",
+            ["MCP_HOST_PID"] = Environment.ProcessId.ToString(),
             // 诊断用：记录最近 300 个请求的请求头和 _meta（不含 Token、Cookie、请求内容），用于判断 AI 客户端提供了哪些会话标识
             ["MCP_REQLOG"] = System.IO.Path.Combine(AppSettings.DataDir, "diagnostics", "requests.jsonl"),
             ["PYTHONIOENCODING"] = "utf-8",
@@ -577,6 +581,94 @@ public partial class MainWindow : Window, IServiceHost
             _memory.Activate();
         }
     }
+
+    GovernanceWindow? _gov;
+    void BtnGov_Click(object s, RoutedEventArgs e)
+    {
+        if (_gov == null)
+        {
+            _gov = new GovernanceWindow(_settings);
+            _gov.Closed += (_, _) => _gov = null;
+            _gov.Show();
+        }
+        else
+        {
+            if (_gov.WindowState == WindowState.Minimized) _gov.WindowState = WindowState.Normal;
+            _gov.Activate();
+        }
+    }
+
+    VisionWindow? _vision;
+    void BtnVision_Click(object s, RoutedEventArgs e)
+    {
+        if (_vision == null)
+        {
+            _vision = new VisionWindow(_settings, this);
+            _vision.Closed += (_, _) => _vision = null;
+            _vision.Show();
+        }
+        else
+        {
+            if (_vision.WindowState == WindowState.Minimized) _vision.WindowState = WindowState.Normal;
+            _vision.Activate();
+        }
+    }
+
+    // ====================== 智能治理：数据库准备、定时检查记忆库、待处理提醒 ======================
+    bool _govReady;
+    bool _scanRunning;
+    int _lastUiRequests, _lastPending;
+
+    void InitGovernance()
+    {
+        try
+        {
+            GovernanceStore.EnsureReady();
+            _govReady = true;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("治理", ex);
+            AppendLog(ServerLog, "■ 治理数据库不可用（任务、记忆维护、视觉工作台授权已停用）：" + ex.Message);
+        }
+        var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        t.Tick += (_, _) => CheckGovernance();
+        t.Start();
+    }
+
+    /// <summary>每 5 秒：新的窗口操作请求 / 待审批结论提醒；按策略周期运行记忆库检查（只用本地规则）</summary>
+    async void CheckGovernance()
+    {
+        if (!_govReady) return;
+        try
+        {
+            int reqs = GovernanceStore.Requests().Count;
+            var o = GovernanceStore.Overview();
+            int pending = (int)(o.DecisionsPending + o.TasksReview);
+            if (reqs > _lastUiRequests && _tray != null)
+                _tray.ShowBalloonTip(5000, "AI 请求操作窗口", "打开 ZERO「视觉工作台」批准或拒绝", Forms.ToolTipIcon.Info);
+            _lastUiRequests = reqs;
+            _lastPending = pending;
+            GovBadge.Text = pending > 0 ? pending.ToString() : "";
+            GovBadge.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
+            VisionBadge.Text = reqs > 0 ? reqs.ToString() : "";
+            VisionBadge.Visibility = reqs > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            if (_scanRunning || !_settings.MemoryEnabled || !GovernanceStore.GetBool("review.enabled") || !_env.HasPython()) return;
+            var last = GovernanceStore.LastScan();
+            int days = Math.Max(1, GovernanceStore.GetInt("review.cycle_days"));
+            if (last != null && DateTime.Now - last.Value < TimeSpan.FromDays(days)) return;
+            if (last == null && DateTime.Now - _startedAt < TimeSpan.FromMinutes(2)) return;   // 启动后稍等，避免和环境准备抢资源
+            _scanRunning = true;
+            var r = await GovernanceStore.ScanAsync("schedule");
+            AppLog.Write("治理", $"定时检查记忆库：{(r.Ok ? "完成" : "失败")} {r.Message}");
+            if (!r.Ok) GovernanceStore.Set("review.last_scan", (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0 - (days - 1) * 86400).ToString(System.Globalization.CultureInfo.InvariantCulture));   // 失败时一天后重试
+        }
+        catch (Exception ex) { AppLog.Error("治理", ex); }
+        finally { _scanRunning = false; }
+    }
+
+    readonly DateTime _startedAt = DateTime.Now;
 
     void CleanupHistory()
     {

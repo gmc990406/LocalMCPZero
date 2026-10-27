@@ -92,7 +92,15 @@
 | `history_conversations` / `history_calls` | ✅ | ✅ | 查看历史对话与操作记录（只读） |
 | `history_note` | ✅ | ✅ | AI 为当前对话写标题和摘要 |
 | `memory_search` | ✅ | ✅ | 搜索记忆库（需启用记忆库） |
-| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改、删除记忆 |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | 保存、修改记忆，移到回收站 |
+| `memory_versions` | ✅ | ✅ | 查看记忆的历史版本 |
+| `task_create` / `task_update` / `task_get` / `task_list` / `task_complete` | ✅ | ✅ | 登记多步任务的计划和进度 |
+| `governance_status` / `governance_claim` / `governance_heartbeat` / `governance_submit` / `governance_release` | ✅ | ✅ | 领取并处理记忆维护任务 |
+| `ui_list_windows` / `ui_inspect` / `ui_wait` / `ui_compare` / `ui_request_access` | ⚙️ | ✅ | 窗口列表、控件树、等待界面变化、截图比较、申请操作授权 |
+| `ui_screenshot` / `ui_record` | ⚙️ | ✅ | 截取或录制单个窗口 |
+| `ui_action` | ⚙️ | ⚙️ | 操作已授权窗口的控件（点击、输入、选择…） |
+| `browser_open` / `browser_inspect` / `browser_close` | ⚙️ | ✅ | 用独立浏览器配置打开允许列表中的网页并查看 |
+| `browser_action` | ⚙️ | ⚙️ | 在 AI 打开的网页里点击、输入、执行脚本 |
 
 ✅ 默认开启 · ⚙️ 默认关闭，可在「权限」中开启 · — 该模式下不可用。除 `history_note` 外，每一项都可以在「权限」中关闭。
 
@@ -111,6 +119,13 @@
 | 查看操作记录 | `history_conversations` `history_calls` | 开 | 开 |
 | 搜索记忆 | `memory_search` | 开 | 开 |
 | 保存和修改记忆 | `memory_save` `memory_update` `memory_delete` | 开 | 开 |
+| 登记任务计划 | `task_*` | 开 | 开 |
+| 处理记忆维护任务 | `governance_*` | 开 | 开 |
+| 查看窗口和控件 | `ui_list_windows` `ui_inspect` `ui_wait` `ui_compare` `ui_request_access` | 关 | 开 |
+| 窗口截图和录制 | `ui_screenshot` `ui_record` | 关 | 开 |
+| 操作窗口控件 | `ui_action` | 关 | 关 |
+| 打开和查看网页 | `browser_open` `browser_inspect` `browser_close` | 关 | 开 |
+| 操作网页 | `browser_action` | 关 | 关 |
 
 - 关闭的权限对应的工具**不会提供给 AI**；ZERO 还会在服务说明里告诉 AI 哪些权限被关闭了，需要时 AI 会提示你去「权限」里开启，而不是误以为电脑没有这个能力。
 - 「有限制」模式下始终不能运行命令和后台任务（命令可以访问工作空间以外的任何文件）。
@@ -141,6 +156,26 @@ ZERO 会把 AI 在这台电脑上的每一次工具调用记录到本机（`%LOC
 - **置顶**的记忆会在 AI 连接时直接写进服务说明（无需搜索），且 AI 不能删除。
 - 每条记忆可设置可见范围：所有模式 / 仅全电脑访问 / 仅有限制模式（AI 保存时默认为当前模式）。
 - 底部开关「启用记忆库」；AI 能否搜索、保存和修改记忆在「权限」中设置。重新启动服务后生效。保存时会自动去掉 Token、密码等敏感内容。
+- 每次修改都保留历史版本；删除先进回收站，可在「治理中心 → 审核与回收站」恢复。打开「保护」的记忆不会被 AI 修改或删除。
+
+### 🧭 治理中心
+
+主界面点「治理」打开，帮你长期保持记忆库干净可靠：
+
+- **定期检查**：ZERO 每 14 天（可调）用本地规则检查记忆库——完全重复、高度相似、可能冲突、长期未被检索、过长、已过期——**不调用任何 AI 模型、不花钱**，只生成「候选」。
+- **AI 协助、你来决定**：连接的 AI 空闲时可以领取维护任务（`governance_claim`）并提交结论；保留、降权这类低风险结论按策略自动生效，合并、更正、归档、删除需要你在「记忆治理」中批准。你也可以不等 AI，直接处理候选。
+- **任务中心**：AI 登记的多步任务（`task_create`）和维护任务都在这里，可以查看进度和事件、批准、取消或重新排队。
+- **策略设置**：任务模式（轻量 / 标准 / 严格）、检查周期和阈值、自动生效范围、浏览器允许列表等，保存后立即生效。
+- 详细说明（数据结构、迁移与回滚、错误码）见 [docs/governance](docs/governance/README.md)。
+
+### 👁️ 视觉工作台
+
+主界面点「视觉」打开，让 AI 能看懂并（在你授权后）操作其他程序：
+
+- AI 可以列出窗口、读取控件结构（UI Automation）、截取或录制单个窗口、比较两次截图（需要「查看窗口和控件」「窗口截图和录制」权限）。
+- 操作控件需要开启「操作窗口控件」权限，**并且**在视觉工作台为具体窗口限时授权（15 / 30 / 60 分钟）；AI 也可以用 `ui_request_access` 申请，ZERO 会在托盘提醒你批准。
+- **紧急停止**按钮立即拒绝所有界面操作；所有操作都有审计日志。密码框、UAC / 登录等安全窗口和 ZERO 自己的窗口始终禁止。
+- 浏览器工具用独立的临时配置启动 Edge / Chrome，默认只允许访问本机地址（可在策略中加入其他主机），关闭后自动删除配置。
 
 主界面下方的日志面板会自动清理 30 分钟前的内容。
 
@@ -280,7 +315,15 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 | `history_conversations` / `history_calls` | ✅ | ✅ | Browse past conversations and tool calls (read-only) |
 | `history_note` | ✅ | ✅ | Let the AI write a title and summary for the current conversation |
 | `memory_search` | ✅ | ✅ | Search the memory library (when memory is enabled) |
-| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save, edit, delete memories |
+| `memory_save` / `memory_update` / `memory_delete` | ✅ | ✅ | Save and edit memories, move to trash |
+| `memory_versions` | ✅ | ✅ | Version history of a memory |
+| `task_create` / `task_update` / `task_get` / `task_list` / `task_complete` | ✅ | ✅ | Register plans and progress of multi-step tasks |
+| `governance_status` / `governance_claim` / `governance_heartbeat` / `governance_submit` / `governance_release` | ✅ | ✅ | Claim and process memory maintenance tasks |
+| `ui_list_windows` / `ui_inspect` / `ui_wait` / `ui_compare` / `ui_request_access` | ⚙️ | ✅ | Window list, control tree, wait for UI changes, compare captures, request control access |
+| `ui_screenshot` / `ui_record` | ⚙️ | ✅ | Capture or record a single window |
+| `ui_action` | ⚙️ | ⚙️ | Operate controls of a window you granted (click, type, select…) |
+| `browser_open` / `browser_inspect` / `browser_close` | ⚙️ | ✅ | Open allow-listed pages in an isolated browser profile and inspect them |
+| `browser_action` | ⚙️ | ⚙️ | Click, type and run scripts in the page the AI opened |
 
 ✅ on by default · ⚙️ off by default, can be enabled in Permissions · — not available in this mode. Everything except `history_note` can be turned off in Permissions.
 
@@ -299,6 +342,13 @@ Click "权限" (Permissions) in the main window to choose which capabilities the
 | View history | `history_conversations` `history_calls` | on | on |
 | Search memory | `memory_search` | on | on |
 | Save & edit memory | `memory_save` `memory_update` `memory_delete` | on | on |
+| Register tasks | `task_*` | on | on |
+| Memory maintenance | `governance_*` | on | on |
+| View windows & controls | `ui_list_windows` `ui_inspect` `ui_wait` `ui_compare` `ui_request_access` | off | on |
+| Window capture & recording | `ui_screenshot` `ui_record` | off | on |
+| Operate window controls | `ui_action` | off | off |
+| Open & view web pages | `browser_open` `browser_inspect` `browser_close` | off | on |
+| Operate web pages | `browser_action` | off | off |
 
 - Tools of a disabled permission are **not offered to the AI**. ZERO also tells the AI which permissions are off, so it asks you to enable them instead of assuming the computer can't do it.
 - Restricted mode can never run commands or background jobs (a command can reach files outside the workspace).
@@ -329,6 +379,26 @@ Long-term memory shared by all AI clients (`%LOCALAPPDATA%\ZERO\memory.db`, neve
 - **Pinned** memories are included in the server instructions on every connection (no search needed) and cannot be deleted by AI.
 - Each memory has a visibility scope: all modes / full access only / restricted only (AI-saved memories default to the current mode).
 - Switch: "Enable memory"; whether AI can search / save / edit memories is set in Permissions. Takes effect after restarting the service. Tokens and passwords are scrubbed on save.
+- Every change keeps a version; deletions go to the trash and can be restored in "治理中心 → 审核与回收站". **Protected** memories cannot be edited or deleted by AI.
+
+### 🧭 Governance center
+
+Click "治理" (Governance) in the main window:
+
+- **Periodic review**: every 14 days (configurable) ZERO checks the memory library with local rules — exact duplicates, near duplicates, possible conflicts, never retrieved, too long, expired. **No AI model is called and nothing costs money**; it only creates *candidates*.
+- **AI helps, you decide**: connected AIs can claim maintenance tasks when idle (`governance_claim`) and submit conclusions. Low-risk ones (keep, lower priority) apply automatically per policy; merge, correct, archive and delete need your approval. You can also handle candidates yourself.
+- **Task center**: multi-step tasks registered by AI (`task_create`) and maintenance tasks, with progress, events, approve / cancel / requeue.
+- **Policy**: task mode (light / standard / strict), review cycle and thresholds, auto-apply scope, browser allow list — effective immediately after saving.
+- Details (schema, migration & rollback, error codes): [docs/governance](docs/governance/README.md).
+
+### 👁️ Vision workbench
+
+Click "视觉" (Vision) in the main window:
+
+- AI can list windows, read the control tree (UI Automation), capture or record a single window and compare captures (permissions "View windows & controls", "Window capture & recording").
+- Operating controls needs the "Operate window controls" permission **and** a time-limited grant (15 / 30 / 60 min) for that specific window in the workbench; AI can request one with `ui_request_access` and ZERO notifies you from the tray.
+- **Emergency stop** rejects all UI actions immediately; every action is audited. Password fields, UAC / sign-in windows and ZERO's own windows are always off-limits.
+- Browser tools launch Edge / Chrome with an isolated temporary profile, allowing only local addresses by default (add hosts in Policy); the profile is deleted on close.
 
 The log panels in the main window automatically drop entries older than 30 minutes.
 
@@ -449,12 +519,15 @@ ZERO/
 ├─ ZERO.sln
 ├─ build.ps1                      一键发布 · one-click publish
 ├─ assets/                        Logo 与截图 · logo & screenshots
+├─ docs/governance/               治理中心与视觉工作台说明 · governance & vision docs
 └─ src/ZERO/
    ├─ App.xaml(.cs)               启动、单实例、全局样式 · startup, single instance, styles
    ├─ MainWindow.xaml(.cs)        主界面与托盘 · main window & tray
    ├─ HistoryWindow.xaml(.cs)     历史记录窗口 · history window
    ├─ MemoryWindow.xaml(.cs)      记忆库窗口 · memory window
    ├─ PermissionWindow.xaml(.cs)  权限窗口 · permissions window
+   ├─ GovernanceWindow.xaml(.cs)  治理中心 · governance center
+   ├─ VisionWindow.xaml(.cs)      视觉工作台 · vision workbench
    ├─ Controls/ZeroDialog.xaml    统一风格的对话框 · styled dialogs
    ├─ Services/
    │  ├─ EnvironmentSetup.cs      运行环境自动安装 · runtime auto-setup
@@ -463,9 +536,15 @@ ZERO/
    │  ├─ HistoryStore.cs          历史记录数据库 · history database (SQLite)
    │  ├─ MemoryStore.cs           记忆库数据库 · memory database (SQLite)
    │  ├─ Permissions.cs           权限定义与默认值 · permission definitions & defaults
+   │  ├─ SchemaMigrator.cs        数据库迁移（备份 + 事务） · schema migration
+   │  ├─ GovernanceStore.cs       治理数据与策略 · governance data & policy
+   │  ├─ UiaProvider.cs           UI Automation / 截图 / 输入（--uia-helper 子进程） · UIA helper
    │  └─ AppLog.cs                文件日志 · file logging
    ├─ Resources/
    │  ├─ server.py                MCP 服务（嵌入资源） · MCP server (embedded)
+   │  ├─ zero_gov.py              记忆治理与任务 · memory governance & tasks
+   │  ├─ zero_ui.py               视觉工作台与浏览器工具 · window & browser tools
+   │  ├─ zero_schema.json         数据库结构与策略默认值 · schema & policy defaults
    │  └─ app.ico
    └─ Properties/PublishProfiles/win-x64.pubxml
 ```

@@ -145,7 +145,10 @@
                                         <Button x:Name="BtnPin" Style="{StaticResource IconButton}" Click="Pin_Click">
                                             <Path x:Name="PinIcon" Style="{StaticResource IconPath}" Data="{StaticResource IcoPin}"/>
                                         </Button>
-                                        <Button Style="{StaticResource IconButton}" ToolTip="删除记忆" Click="Delete_Click">
+                                        <Button x:Name="BtnProtect" Style="{StaticResource IconButton}" Click="Protect_Click">
+                                            <Path x:Name="ProtectIcon" Style="{StaticResource IconPath}" Data="{StaticResource IcoShield}"/>
+                                        </Button>
+                                        <Button Style="{StaticResource IconButton}" ToolTip="移到回收站（可在治理中心恢复）" Click="Delete_Click">
                                             <Path Style="{StaticResource IconPath}" Data="{StaticResource IcoTrash}"/>
                                         </Button>
                                     </StackPanel>
@@ -197,7 +200,7 @@
                         <CheckBox x:Name="EnableSwitch" Style="{StaticResource SwitchSafe}" VerticalAlignment="Center" Click="Setting_Changed"/>
                         <TextBlock Text="启用记忆库" FontSize="12.5" VerticalAlignment="Center" Margin="8,0,24,0"
                                    ToolTip="关闭后 AI 看不到也无法使用记忆库（已有记忆会保留）"/>
-                        <TextBlock Text="AI 能否保存和修改记忆在主界面「权限」中设置 · 置顶的记忆会在 AI 连接时直接告诉它" FontSize="11.5" Foreground="{StaticResource TextTertiary}" VerticalAlignment="Center"/>
+                        <TextBlock Text="AI 能否保存和修改记忆在主界面「权限」中设置 · 置顶的记忆会在 AI 连接时直接告诉它 · 历史版本和回收站在「治理」中" FontSize="11.5" Foreground="{StaticResource TextTertiary}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="SettingHint" Text="开关修改后，重新启动服务生效" FontSize="11.5" Foreground="{StaticResource TextTertiary}"
