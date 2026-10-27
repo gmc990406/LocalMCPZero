@@ -15,6 +15,9 @@ dist/
 runtime/
 logs/
 
+# 本地正式构建输出（build.ps1 -Mode Release）
+release/
+
 # Python
 __pycache__/
 *.pyc
