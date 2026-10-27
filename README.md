@@ -10,6 +10,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-ZERO%20v1.3.0-2ea44f?style=for-the-badge&logo=windows" alt="Download ZERO v1.3.0"></a>
+  <a href="https://github.com/gmc990406/LocalMCPZero/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/Release-v1.3.0%20prerelease-orange?style=for-the-badge" alt="v1.3.0 Release"></a>
+  <a href="#download"><img src="https://img.shields.io/badge/%E8%AF%A6%E6%83%85-Size%20%26%20SHA256-6e7681?style=for-the-badge" alt="Download details"></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?logo=windows" alt="platform">
   <img src="https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet" alt=".NET 9">
   <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-7B3FF2" alt="MCP">
@@ -17,8 +23,21 @@
 </p>
 
 <p align="center">
-  <a href="#zh">中文</a> · <a href="#en">English</a>
+  <a href="#zh">中文</a> · <a href="#en">English</a> · <a href="#download">下载 / Download</a>
 </p>
+
+<a id="download"></a>
+
+## 📥 下载 / Download
+
+**最新版本 Latest：[v1.3.0](https://github.com/gmc990406/LocalMCPZero/releases/tag/v1.3.0)**（预发布 / prerelease）
+
+| | |
+|---|---|
+| 直接下载 Direct | [ZERO.exe](https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe) |
+| 大小 Size | ~67.3 MB（70,558,536 bytes） |
+| SHA256 | `71F33DDB86F08E6AD70CB0B6FAA2219CABA04998ACFBC2E887020D6BECD5D479` |
+| 全部版本 All releases | [Releases](https://github.com/gmc990406/LocalMCPZero/releases) |
 
 <p align="center">
   <img src="assets/screenshot.png" width="760" alt="ZERO screenshot">
@@ -57,7 +76,7 @@
 
 ### 快速开始
 
-1. **下载**：从 [Releases](../../releases) 下载 `ZERO.exe`，放到一个单独的文件夹里。
+1. **下载**：点击上方绿色按钮，或从 [v1.3.0 Release](https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe) 下载 `ZERO.exe`，放到一个单独的文件夹里（详见 [下载](#download)）。
 2. **运行**：双击启动，首次运行会自动准备环境（约 1–3 分钟，视网速而定）。
 3. **选择模式**：
    - 🔒 **有限制** — 只能读写所选工作目录内的文件，不能执行命令（推荐新手）。
@@ -280,7 +299,7 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 
 ### Quick start
 
-1. **Download** `ZERO.exe` from [Releases](../../releases) and put it in its own folder.
+1. **Download** `ZERO.exe` via the green button above, or from the [v1.3.0 Release](https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe), and put it in its own folder (see [Download](#download)).
 2. **Run** it. The first launch prepares the runtime automatically (1–3 minutes depending on your network).
 3. **Choose a mode**:
    - 🔒 **Restricted** — read/write files in the selected workspace only, no commands (recommended).
