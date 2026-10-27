@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-ZERO%20v1.3.0-2ea44f?style=for-the-badge&logo=windows" alt="Download ZERO v1.3.0"></a>
-  <a href="https://github.com/gmc990406/LocalMCPZero/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/Release-v1.3.0%20prerelease-orange?style=for-the-badge" alt="v1.3.0 Release"></a>
+  <a href="https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-ZERO%20v1.3.0-2ea44f?style=for-the-badge&logo=windows" alt="Download ZERO v1.3.0"></a>
+  <a href="https://github.com/gmc990406/LocalMCPZero/releases/latest"><img src="https://img.shields.io/badge/Release-v1.3.0-blue?style=for-the-badge" alt="v1.3.0 Release"></a>
   <a href="#download"><img src="https://img.shields.io/badge/%E8%AF%A6%E6%83%85-Size%20%26%20SHA256-6e7681?style=for-the-badge" alt="Download details"></a>
 </p>
 
@@ -30,17 +30,31 @@
 
 ## 📥 下载 / Download
 
-**最新版本 Latest：[v1.3.0](https://github.com/gmc990406/LocalMCPZero/releases/tag/v1.3.0)**（预发布 / prerelease）
+**当前版本 Current：[v1.3.0](https://github.com/gmc990406/LocalMCPZero/releases/latest)**
 
 | | |
 |---|---|
-| 直接下载 Direct | [ZERO.exe](https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe) |
+| 直接下载 Direct | [ZERO.exe](https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe) |
 | 大小 Size | ~67.3 MB（70,558,536 bytes） |
 | SHA256 | `71F33DDB86F08E6AD70CB0B6FAA2219CABA04998ACFBC2E887020D6BECD5D479` |
 | 全部版本 All releases | [Releases](https://github.com/gmc990406/LocalMCPZero/releases) |
 
 <p align="center">
-  <img src="assets/screenshot.png" width="760" alt="ZERO screenshot">
+  <img src="assets/screenshot-overview.png" width="760" alt="ZERO overview">
+</p>
+
+<p align="center">
+  <img src="assets/screenshot-perms.png" width="370" alt="Permissions">
+  &nbsp;
+  <img src="assets/screenshot-memory.png" width="370" alt="Memory">
+</p>
+<p align="center">
+  <img src="assets/screenshot-governance.png" width="370" alt="Governance">
+  &nbsp;
+  <img src="assets/screenshot-vision.png" width="370" alt="Vision">
+</p>
+<p align="center">
+  <img src="assets/screenshot-history.png" width="760" alt="History">
 </p>
 
 ---
@@ -76,7 +90,7 @@
 
 ### 快速开始
 
-1. **下载**：点击上方绿色按钮，或从 [v1.3.0 Release](https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe) 下载 `ZERO.exe`，放到一个单独的文件夹里（详见 [下载](#download)）。
+1. **下载**：点击上方绿色按钮，或从 [最新 Release](https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe) 下载 `ZERO.exe`，放到一个单独的文件夹里（详见 [下载](#download)）。
 2. **运行**：双击启动，首次运行会自动准备环境（约 1–3 分钟，视网速而定）。
 3. **选择模式**：
    - 🔒 **有限制** — 只能读写所选工作目录内的文件，不能执行命令（推荐新手）。
@@ -93,6 +107,17 @@
 > - 关闭窗口后 ZERO 会最小化到系统托盘继续运行；右键托盘图标可启动/停止、复制地址、打开日志或退出。
 > - Token 输入框右侧的 🔄 按钮可重新生成 Token（旧地址立即失效）。
 > - 命令行参数 `ZERO.exe --start` 会在环境就绪后自动启动服务，可放入「启动」文件夹实现开机自启。
+
+### 界面（v1.3）
+
+权限、记忆库、治理中心、视觉工作台、历史记录都收进**同一个主窗口**，左侧侧栏一键切换；关闭窗口会隐藏到托盘（托盘菜单也能打开各模块）。窗口宽度变化时会自动切换三档布局。
+
+### 多会话与并发（v1.3）
+
+多个 AI 客户端可以同时连接同一台 ZERO：
+
+- **会话隔离**：任务、浏览器临时配置等按真实聊天 / MCP 会话归属；识别不到会话时按单次请求隔离，避免不同对话误共享状态。
+- **并发调度**：读写、搜索、命令、记忆、窗口与浏览器工具分池限流，单个会话也有并发上限，避免某一 Agent 占满整台 ZERO。
 
 ### 提供的工具
 
@@ -254,12 +279,17 @@ Cloudflare 快速隧道每次启动都会分配新域名，请重新复制 MCP �
 
 **环境**：Visual Studio 2022（17.12+，「.NET 桌面开发」工作负载）或 .NET 9 SDK。
 
-- **Visual Studio**：打开 `ZERO.sln`，按 `F5` 调试；右键项目 →「发布」→ 选择 `win-x64` 配置，输出 `dist\ZERO.exe`。
-- **命令行**：
+- **Visual Studio**：打开 `ZERO.sln`，按 `F5` 调试。
+- **命令行**（推荐，不写入 `src\ZERO\bin`）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1 [-Mode Test|Release]
 ```
+
+| 模式 | 输出 |
+|---|---|
+| `Test`（默认） | Debug 产物 → `%TEMP%\zbuild` |
+| `Release` | 单文件自包含发布 → `release\v<Version>\`（当前为 `release\v1.3.0\`） |
 
 | 调试用环境变量 | 作用 |
 |---|---|
@@ -299,7 +329,7 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 
 ### Quick start
 
-1. **Download** `ZERO.exe` via the green button above, or from the [v1.3.0 Release](https://github.com/gmc990406/LocalMCPZero/releases/download/v1.3.0/ZERO.exe), and put it in its own folder (see [Download](#download)).
+1. **Download** `ZERO.exe` via the green button above, or from the [Latest Release](https://github.com/gmc990406/LocalMCPZero/releases/latest/download/ZERO.exe), and put it in its own folder (see [Download](#download)).
 2. **Run** it. The first launch prepares the runtime automatically (1–3 minutes depending on your network).
 3. **Choose a mode**:
    - 🔒 **Restricted** — read/write files in the selected workspace only, no commands (recommended).
@@ -316,6 +346,17 @@ Any client that supports **remote MCP over Streamable HTTP**, for example:
 > - Closing the window minimizes ZERO to the system tray. Right-click the tray icon to start/stop, copy the URL, open logs or quit.
 > - The 🔄 button next to the Token field regenerates the token (the old URL stops working immediately).
 > - `ZERO.exe --start` starts the service automatically once the runtime is ready — put a shortcut in the Startup folder to launch on boot.
+
+### UI (v1.3)
+
+Permissions, Memory, Governance, Vision and History live in **one main window** with a left sidebar. Closing the window hides to the tray (tray menu opens each module). The layout switches across three size tiers as you resize.
+
+### Multi-session & concurrency (v1.3)
+
+Multiple AI clients can talk to the same ZERO at once:
+
+- **Session isolation**: tasks and temporary browser profiles belong to a real chat / MCP session; unidentified calls stay per-request so conversations do not share state by accident.
+- **Parallel scheduler**: read/write/search/command/memory/UI/browser tools run in separate pools with per-session caps, so one Agent cannot saturate ZERO.
 
 ### Tools
 
@@ -477,12 +518,17 @@ No. ZERO uses its own portable Python under `runtime\` in the app folder. Delete
 
 **Requirements**: Visual Studio 2022 (17.12+, ".NET desktop development" workload) or the .NET 9 SDK.
 
-- **Visual Studio**: open `ZERO.sln` and press `F5`. To publish, right-click the project → **Publish** → `win-x64` profile; output goes to `dist\ZERO.exe`.
-- **Command line**:
+- **Visual Studio**: open `ZERO.sln` and press `F5`.
+- **Command line** (preferred; does not write into `src\ZERO\bin`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1 [-Mode Test|Release]
 ```
+
+| Mode | Output |
+|---|---|
+| `Test` (default) | Debug build → `%TEMP%\zbuild` |
+| `Release` | single-file self-contained → `release\v<Version>\` (currently `release\v1.3.0\`) |
 
 | Debug env var | Effect |
 |---|---|
@@ -541,7 +587,7 @@ ZERO/
 ├─ docs/governance/               治理中心与视觉工作台说明 · governance & vision docs
 └─ src/ZERO/
    ├─ App.xaml(.cs)               启动、单实例、全局样式 · startup, single instance, styles
-   ├─ MainWindow.xaml(.cs)        主界面与托盘 · main window & tray
+   ├─ MainWindow.xaml(.cs)        单主壳侧栏导航与托盘 · single-shell sidebar & tray
    ├─ HistoryWindow.xaml(.cs)     历史记录窗口 · history window
    ├─ MemoryWindow.xaml(.cs)      记忆库窗口 · memory window
    ├─ PermissionWindow.xaml(.cs)  权限窗口 · permissions window
