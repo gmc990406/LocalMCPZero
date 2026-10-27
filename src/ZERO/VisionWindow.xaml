@@ -77,8 +77,17 @@
                     </Button>
                 </Grid>
 
-                <!-- 待批准的请求 -->
-                <StackPanel x:Name="RequestsHost" Grid.Row="1"/>
+                <!-- 可观测进程范围：不再逐窗口授权。全部观测为用户主动可选；受保护系统进程始终排除。 -->
+                <StackPanel Grid.Row="1" Margin="0,0,0,6">
+                    <Border Background="#EFF3FA" CornerRadius="8" Padding="12,9" Margin="0,0,0,8">
+                        <WrapPanel VerticalAlignment="Center">
+                            <TextBlock x:Name="ScopeText" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource TextPrimary}"/>
+                            <Button Content="全部观测" Style="{StaticResource SecondaryButton}" Padding="11,5" Margin="0,0,6,0" Click="ScopeAll_Click"/>
+                            <Button Content="指定进程" Style="{StaticResource SecondaryButton}" Padding="11,5" Click="ScopeSelected_Click"/>
+                        </WrapPanel>
+                    </Border>
+                    <StackPanel x:Name="RequestsHost"/>
+                </StackPanel>
 
                 <Grid Grid.Row="2">
                     <Grid.ColumnDefinitions>
@@ -150,7 +159,7 @@
                 </Grid>
 
                 <TextBlock x:Name="FooterHint" Grid.Row="3" Margin="4,12,0,0" FontSize="11.5" Foreground="{StaticResource TextTertiary}" TextWrapping="Wrap"
-                           Text="AI 可以观察窗口（需要「查看窗口和控件」「窗口截图和录制」权限）；操作窗口还需要「操作窗口控件」权限，并且只能操作你在这里授权的窗口。登录、UAC 等安全窗口和 ZERO 主程序自己的窗口始终禁止。"/>
+                           Text="通过「全部观测 / 指定进程」统一控制 AI 可见范围，无需逐窗口授权；操作仍受权限总开关、紧急停止与安全窗口保护。后台优先使用 UIA，不强行置前；最小化画面可能受目标程序限制。"/>
             </Grid>
         </Grid>
     </Border>

@@ -15,6 +15,8 @@ MCP_ZERO_EXE        : ZERO.exe 路径（窗口控件树、界面操作、图片�
 MCP_REQLOG          : 调试用：记录请求头和 _meta（不含 Token/Cookie）的文件路径，只保留最近 300 条
 """
 import asyncio, contextlib, contextvars, functools, inspect, json, os, re, subprocess, sys, time, uuid
+from concurrent.futures import ThreadPoolExecutor
+import hashlib, tempfile, threading, queue, collections
 from pathlib import Path
 
 import uvicorn
@@ -439,8 +441,15 @@ _HINTS: dict = {}           # (客户端, 提示类别) -> 上次提示时间 / 
 
 
 def _actor() -> dict:
-    name, key, _, _ = _client()
-    return {"type": "ai", "display": name, "key": key}
+    name, _, ua, sid = _client()
+    req = REQ_INFO.get()
+    # 不使用 User-Agent 作为执行者：同类客户端的多个网页聊天可能拥有相同 UA。
+    # 能识别的真实聊天/传输会话独立归属；匿名调用按单请求隔离，不会误共享任务或浏览器。
+    scope = _upstream() or req.get("zero_conv", "") or sid
+    if not scope:
+        scope = "unbound:" + req.get("req_id", uuid.uuid4().hex)
+    return {"type": "ai", "display": name, "key": f"{MODE}|{scope}",
+            "session": scope, "identified": not scope.startswith("unbound:"), "client": ua}
 
 
 def _policy() -> dict:
@@ -531,6 +540,81 @@ def gov_after(name: str, ctx: dict, ok: bool) -> str:
     return out
 
 
+# 各类工具同时具备多 Worker；按会话和资源池双重限额，避免同一 Agent 独占整个 ZERO。
+_PARALLEL_KIND = {
+ "list_files":"read", "read_file":"read", "system_info":"read", "list_processes":"read",
+ "search_files":"search", "write_file":"write", "edit_file":"write", "make_dir":"write",
+ "run_command":"command", "start_job":"command", "stop_job":"command", "job_status":"command", "list_jobs":"command",
+ **dict.fromkeys(("memory_search","memory_save","memory_update","memory_delete","memory_versions",
+ "governance_status","governance_claim","governance_heartbeat","governance_submit","governance_release",
+ "task_create","task_update","task_get","task_list","task_complete"), "memory"),
+ **dict.fromkeys(("ui_list_windows","ui_inspect","ui_wait","ui_compare","ui_screenshot","ui_record",
+ "ui_request_access","ui_action"), "ui"),
+ **dict.fromkeys(("browser_open","browser_inspect","browser_action","browser_close"), "browser")
+}
+_PARALLEL_CAP = {"read":16,"search":4,"write":6,"command":3,"memory":8,"ui":8,"browser":5,"other":8}
+
+
+class ParallelScheduler:
+    def __init__(self):
+        self.pools = {k: ThreadPoolExecutor(max_workers=v, thread_name_prefix="zero-"+k) for k,v in _PARALLEL_CAP.items()}
+        self.gates, self.sessions, self.waiting, self.active, self.total = {}, {}, {}, {}, {}
+
+    async def run(self, name, fn, kw, actor_key, async_fn):
+        kind = _PARALLEL_KIND.get(name,"other")
+        self.gates.setdefault(kind,asyncio.Semaphore(_PARALLEL_CAP[kind]))
+        key = (kind,actor_key)
+        self.sessions.setdefault(key,asyncio.Semaphore(3 if kind in ("read","memory") else 2))
+        if self.waiting.get(key,0)>=8 or sum(self.waiting.values())>=120:
+            raise _gerr("QUEUE_FULL",kind+" 等待队列已满")
+        self.waiting[key] = self.waiting.get(key,0)+1
+        local = global_slot = False
+        t0 = time.monotonic()
+        try:
+            try:
+                await asyncio.wait_for(self.sessions[key].acquire(),20)
+                local = True
+                await asyncio.wait_for(self.gates[kind].acquire(),20)
+                global_slot = True
+            except asyncio.TimeoutError:
+                raise _gerr("RESOURCE_BUSY",kind+" 资源繁忙，等待超过 20 秒")
+            self.active[kind] = self.active.get(kind,0)+1
+            wait_ms = round((time.monotonic()-t0)*1000)
+            try:
+                if async_fn: return await fn(**kw)
+                copied = contextvars.copy_context()
+                return await asyncio.get_running_loop().run_in_executor(
+                    self.pools[kind],copied.run,functools.partial(fn,**kw))
+            finally:
+                self.total[kind] = self.total.get(kind,0)+1
+                self.active[kind]-=1
+        finally:
+            if global_slot:self.gates[kind].release()
+            if local:self.sessions[key].release()
+            self.waiting[key]-=1
+            if not self.waiting[key]:
+                self.waiting.pop(key,None)
+                self.sessions.pop(key,None)
+
+    def snapshot(self):
+        return {"ok":True,"pools":{k:{"capacity":n,"active":self.active.get(k,0),
+            "waiting":sum(v for (pool,_),v in self.waiting.items() if pool==k),
+            "completed":self.total.get(k,0)} for k,n in _PARALLEL_CAP.items()}}
+
+
+SCHED = ParallelScheduler()
+
+
+@mcp.tool(annotations=RO)
+def zero_runtime_status() -> str:
+    """只读：查看各 Worker 池并发/排队数，以及本次连接能否稳定识别聊天会话。"""
+    result = SCHED.snapshot()
+    result["session_identified"] = _actor()["identified"]
+    if not result["session_identified"]:
+        result["session_notice"] = "客户端未提供可识别的聊天/会话 ID。本请求独立隔离；若需要跨请求保持任务归属，应由客户端提供 x-zero-conversation-id 或 _meta 中的 zero/conversation_id"
+    return json.dumps(result,ensure_ascii=False)
+
+
 def _governed(name: str, fn):
     """包装每个工具：前置检查 → 执行 → 记录 → 后置处理。同步工具放到线程中执行，避免阻塞其他请求"""
     is_async = inspect.iscoroutinefunction(fn)
@@ -540,32 +624,33 @@ def _governed(name: str, fn):
         t0 = time.time()
         done = []
 
-        def rec(text: str, ok: bool) -> bool:
+        async def rec(text: str, ok: bool) -> bool:
             if done or name in NO_HISTORY:
                 return False
             done.append(1)
-            return history_record(name, kw, text, ok, int((time.time() - t0) * 1000))
+            return await asyncio.to_thread(history_record, name, kw, text, ok, int((time.time() - t0) * 1000))
 
         try:
-            ctx = gov_before(name, kw)
+            ctx = await asyncio.to_thread(gov_before, name, kw)
         except Exception as e:
             info = e.to_dict() if G and isinstance(e, G.GovError) else {"ok": False, "code": "BLOCKED", "message": str(e)}
             log(f"已拦截 {name}：{info.get('code')} {info.get('message', '')[:120]}")
-            rec("已拦截：" + json.dumps(info, ensure_ascii=False), False)
+            await rec("已拦截：" + json.dumps(info, ensure_ascii=False), False)
             raise ToolError(json.dumps(info, ensure_ascii=False)) from None
         try:
-            r = await fn(**kw) if is_async else await asyncio.to_thread(fn, **kw)
+            r = await SCHED.run(name, fn, kw, ctx["actor"]["key"], is_async)
         except asyncio.CancelledError:
-            rec("已取消（客户端断开或请求被取消）", False)
+            await rec("已取消（客户端断开或请求被取消）", False)
             raise
         except Exception as e:
             if G and isinstance(e, G.GovError):
-                rec("失败：" + json.dumps(e.to_dict(), ensure_ascii=False), False)
+                await rec("失败：" + json.dumps(e.to_dict(), ensure_ascii=False), False)
                 raise ToolError(json.dumps(e.to_dict(), ensure_ascii=False)) from None
-            rec(f"错误：{e}", False)
+            await rec(f"错误：{e}", False)
             raise
-        first = rec(_fmt_result(r), True)
-        return _append_text(r, (NOTE_HINT if first else "") + gov_after(name, ctx, True))
+        first = await rec(_fmt_result(r), True)
+        hint = await asyncio.to_thread(gov_after, name, ctx, True)
+        return _append_text(r, (NOTE_HINT if first else "") + hint)
     return w
 
 
@@ -624,39 +709,93 @@ def list_files(path: str = ".", recursive: bool = False, max_items: int = 500) -
     return "\n".join(sorted(out)) or "（空目录）"
 
 
+# 文件锁按绝对路径分片，不使用全局写锁。不同文件写入可并行，同文件需版本校验。
+_FILE_LOCKS = [threading.RLock() for _ in range(512)]
+_FILE_LAST_WRITER = {}
+
+
+def _file_lock(p: Path):
+    return _FILE_LOCKS[hash(str(p).lower()) % len(_FILE_LOCKS)]
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _atomic_text(p: Path, text: str):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="",
+                                          prefix=".zero-write-", suffix=".tmp", dir=p.parent, delete=False) as h:
+            tmp = Path(h.name)
+            h.write(text)
+            h.flush()
+            os.fsync(h.fileno())
+        os.replace(tmp, p)
+    finally:
+        if tmp and tmp.exists():
+            with contextlib.suppress(OSError): tmp.unlink()
+
+
+def _check_revision(p: Path, expected_sha256: str, actor: str, full_replace: bool = False):
+    raw = p.read_bytes() if p.exists() else None
+    digest = _digest(raw) if raw is not None else "MISSING"
+    if expected_sha256 and digest != expected_sha256.strip().lower():
+        raise _gerr("FILE_REVISION_CONFLICT", f"文件版本不一致：{disp(p)}，当前 SHA256={digest}；重新读取后再合并修改")
+    recent = _FILE_LAST_WRITER.get(str(p).lower())
+    if full_replace and not expected_sha256 and recent and recent[0] != actor and time.monotonic() - recent[1] < 1200:
+        raise _gerr("FILE_REVISION_REQUIRED", f"此文件刚被另一会话修改：{disp(p)}；重新 read_file 取得 SHA256 后，带 expected_sha256 写入")
+    return raw, digest
+
+
+def _record_file_writer(p: Path, actor: str):
+    _FILE_LAST_WRITER[str(p).lower()] = (actor, time.monotonic())
+    if len(_FILE_LAST_WRITER) > 10000:
+        limit = time.monotonic() - 1200
+        for k,v in list(_FILE_LAST_WRITER.items()):
+            if v[1] < limit: _FILE_LAST_WRITER.pop(k,None)
+
+
 @mcp.tool(annotations=RO)
 def read_file(path: str, start_line: int = 1, end_line: int = 0) -> str:
-    """读取文本文件，可指定行范围（end_line=0 表示到结尾），返回带行号的内容。"""
+    """读取文本并返回 SHA256 文件版本；并发写入时可传 expected_sha256 避免覆盖。"""
     f = safe_path(path)
     log(f"read_file {disp(f)}")
-    lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+    data = f.read_bytes()
+    lines = data.decode("utf-8", errors="replace").splitlines()
     end = len(lines) if end_line <= 0 else min(end_line, len(lines))
     body = "\n".join(f"{i}: {lines[i - 1]}" for i in range(max(1, start_line), end + 1))
-    return clip(f"[{disp(f)} 共 {len(lines)} 行]\n" + body)
+    return clip(f"[{disp(f)} 共 {len(lines)} 行；SHA256={_digest(data)}]\n" + body)
 
 
 @mcp.tool(annotations=RW)
-def write_file(path: str, content: str) -> str:
-    """创建或覆盖文本文件（自动创建父目录）。"""
+def write_file(path: str, content: str, expected_sha256: str = "") -> str:
+    """原子创建或覆盖文件；已有文件建议传入 read_file 返回的 SHA256 防止跨 AI 覆盖。"""
     f = safe_path(path)
-    log(f"write_file {disp(f)}")
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(content, encoding="utf-8")
-    return f"已写入 {disp(f)}（{len(content)} 字符）"
+    actor = _actor()["key"]
+    with _file_lock(f):
+        _check_revision(f, expected_sha256, actor, full_replace=True)
+        _atomic_text(f, content)
+        _record_file_writer(f, actor)
+    return f"已原子写入 {disp(f)}（{len(content)} 字符）"
 
 
 @mcp.tool(annotations=RW)
-def edit_file(path: str, old_text: str, new_text: str, replace_all: bool = False) -> str:
-    """把文件中的 old_text 替换为 new_text。old_text 必须精确匹配；不唯一时需 replace_all=True。"""
+def edit_file(path: str, old_text: str, new_text: str, replace_all: bool = False, expected_sha256: str = "") -> str:
+    """串行化同文件精确文本替换，支持 expected_sha256 乐观锁；不同文件仍能并发。"""
     f = safe_path(path)
-    log(f"edit_file {disp(f)}")
-    text = f.read_text(encoding="utf-8")
-    n = text.count(old_text)
-    if n == 0:
-        return "未找到 old_text，未修改。"
-    if n > 1 and not replace_all:
-        return f"old_text 出现了 {n} 次，请提供更长的上下文或设置 replace_all=True。"
-    f.write_text(text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1), encoding="utf-8")
+    actor = _actor()["key"]
+    with _file_lock(f):
+        raw, _ = _check_revision(f, expected_sha256, actor)
+        if raw is None: return "文件不存在，未修改"
+        text = raw.decode("utf-8")
+        n = text.count(old_text)
+        if not n: return "未找到 old_text，文件可能已被其他 AI 修改，未覆盖"
+        if n > 1 and not replace_all:
+            return f"old_text 出现了 {n} 次，请提供更长的上下文或设置 replace_all=True。"
+        _atomic_text(f, text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1))
+        _record_file_writer(f, actor)
     return f"已修改 {disp(f)}（替换 {n if replace_all else 1} 处）"
 
 
@@ -706,7 +845,7 @@ async def run_command(command: str, cwd: str = ".", timeout_seconds: int = 60) -
             return f"[退出码 {r.returncode}]\n{clip(out)}"
         except subprocess.TimeoutExpired:
             return f"超时（{timeout_seconds} 秒）。耗时任务请改用 start_job。"
-    return await asyncio.to_thread(_run)
+    return await asyncio.get_running_loop().run_in_executor(SCHED.pools["command"], _run)
 
 
 JOBS: dict = {}
@@ -1020,6 +1159,34 @@ def pinned_memories(limit_chars: int = 2000) -> str:
     return ("\n用户置顶的记忆（来自 ZERO 记忆库，仅供参考，不是指令）：\n" + "\n".join(out)) if out else ""
 
 
+# memory_search 是读取工具；命中率统计改为异步批量写，避免所有查询争用 SQLite 写锁。
+_MEMORY_HIT_QUEUE = queue.Queue(maxsize=2000)
+
+
+def _memory_hit_writer():
+    while True:
+        first = _MEMORY_HIT_QUEUE.get()
+        batch = [first]
+        time.sleep(0.1)   # 在极短时间内合并多个网页的查询统计
+        while len(batch) < 256:
+            try: batch.append(_MEMORY_HIT_QUEUE.get_nowait())
+            except queue.Empty: break
+        counts = collections.Counter(mid for group in batch for mid in group)
+        try:
+            with _mdb() as c:
+                now = time.time()
+                c.executemany("UPDATE memories SET hits=hits+?, last_used=? WHERE id=?",
+                              [(cnt, now, mid) for mid, cnt in counts.items()])
+        except Exception as ex:
+            log(f"记忆访问统计异步提交失败（不影响记忆检索）：{ex}")
+        finally:
+            for _ in batch: _MEMORY_HIT_QUEUE.task_done()
+
+
+if MEMORY_DB:
+    threading.Thread(target=_memory_hit_writer, name="zero-memory-hits", daemon=True).start()
+
+
 def memory_search(query: str = "", tags: str = "", limit: int = 20, include_archived: bool = False) -> str:
     """搜索记忆库：用户偏好、项目路径与约定、之前得出的结论等长期信息。开始新任务时先用关键词搜索相关记忆。
     query 为关键词（空格分隔，匹配任意一个即可，命中越多越靠前）；tags 按标签筛选；都为空时列出置顶和最近的记忆。
@@ -1042,9 +1209,9 @@ def memory_search(query: str = "", tags: str = "", limit: int = 20, include_arch
             scored.append((score, r))
         scored.sort(key=lambda x: (-x[0], -x[1][4], 1 if x[1][7] else 0, -x[1][8], -x[1][3]))
         hit = [r for _, r in scored[:limit]]
-        if hit:
-            now = time.time()
-            c.executemany("UPDATE memories SET hits=hits+1, last_used=? WHERE id=?", [(now, r[0]) for r in hit])
+    if hit:
+        with contextlib.suppress(queue.Full):
+            _MEMORY_HIT_QUEUE.put_nowait(tuple(row[0] for row in hit))
     if not hit:
         return MEM_PREFIX + ("没有找到相关记忆" if terms or want else "记忆库还是空的")
     more = f"\n（共 {len(scored)} 条匹配，只显示前 {limit} 条）" if len(scored) > limit else ""
@@ -1534,8 +1701,10 @@ def with_auth(app):
         ua = headers.get(b"user-agent", b"").decode(errors="replace")[:200]
         sid = headers.get(b"mcp-session-id", b"").decode(errors="replace")[:64]
         up = headers.get(b"x-openai-session", b"").decode(errors="replace").strip()[:200]
-        info = {"ua": ua, "sid": sid if sid.startswith(SID_PREFIX) else "", "call": None, "recorded": False,
-                "up": f"openai:{up}" if up else ""}
+        custom = headers.get(b"x-zero-conversation-id", b"").decode(errors="replace").strip()[:200]
+        info = {"ua": ua, "sid": sid if sid.startswith(SID_PREFIX) else "", "call": None,
+                "recorded": False, "up": f"openai:{up}" if up else "",
+                "zero_conv": "zero:" + custom if custom else "", "req_id": uuid.uuid4().hex}
         REQ_INFO.set(info)
         if not (HISTORY_DB or MEMORY_DB or GOV_DB or REQLOG):
             return await app(scope, receive, send)
@@ -1549,6 +1718,10 @@ def with_auth(app):
         meta = info.get("meta")
         if not info["up"] and isinstance(meta, dict) and isinstance(meta.get("openai/session"), str) and meta["openai/session"]:
             info["up"] = "openai:" + meta["openai/session"][:200]
+        if isinstance(meta, dict) and not info["zero_conv"]:
+            label = meta.get("zero/conversation_id")
+            if isinstance(label, str) and label:
+                info["zero_conv"] = "zero:" + label[:200]
         _reqlog(method, scope, headers, info)
         if info.get("init") and HISTORY_DB:    # 新会话：签发 ZERO 自己的会话标识，支持的客户端会在后续请求中回传
             info["sid"] = SID_PREFIX + uuid.uuid4().hex[:16]
@@ -1562,7 +1735,8 @@ def with_auth(app):
         await app(scope, receive, _capture(send, resp))
         call = info.get("call")
         if call and not info["recorded"] and not call[0].startswith("history_"):
-            history_record(call[0], call[1], "调用未执行（参数校验失败或工具不存在）：" + _error_text(resp), False,
+            await asyncio.to_thread(history_record, call[0], call[1],
+                           "调用未执行（参数校验失败或工具不存在）：" + _error_text(resp), False,
                            int((time.time() - t0) * 1000))
     return wrapped
 

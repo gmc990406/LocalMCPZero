@@ -26,6 +26,39 @@ public partial class VisionWindow : Window
     WinInfo? _win;
     string _view = "shot";
     int _lastRequests = -1;
+    string ScopeKey => "ui.observe_mode." + Mode;
+    string ProcessesKey => "ui.allowed_processes." + Mode;
+    bool ObserveAll => GovernanceStore.Get(ScopeKey) == "all";
+    HashSet<string> AllowedProcesses => GovernanceStore.Get(ProcessesKey)
+        .Split(new[] { ',', ';', '，', '；' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    bool InScope(WinInfo w) => !IsProtected(w.Process, w.Pid) && (ObserveAll || AllowedProcesses.Contains(w.Process));
+    void ScopeAll_Click(object s, RoutedEventArgs e) => SetScope("all");
+    void ScopeSelected_Click(object s, RoutedEventArgs e) => SetScope("selected");
+    void SetScope(string desired)
+    {
+        if (desired == "all" && !ObserveAll &&
+            !ZeroDialog.Show(this, new DialogSpec("启用全部进程观测？",
+                "AI 将可以查看现在和以后打开的普通窗口；开启窗口操作权限后，也能操作。ZERO 自身、安全窗口、密码字段仍受保护，可随时切回指定进程或紧急停止。",
+                DialogKind.Warning, "启用全部观测"))) return;
+        GovernanceStore.Set(ScopeKey, desired);
+        RefreshScope(); RefreshStatus(); ShowWindow();
+    }
+    void ToggleProcess(WinInfo w)
+    {
+        if (IsProtected(w.Process, w.Pid)) return;
+        var names = AllowedProcesses;
+        if (!names.Add(w.Process)) names.Remove(w.Process);
+        GovernanceStore.Set(ProcessesKey, string.Join(",", names.OrderBy(n => n)));
+        RefreshScope(); ShowWindow();
+    }
+    void RefreshScope()
+    {
+        if (!IsLoaded) return;
+        ScopeText.Text = (ObserveAll ? "观测范围：全部进程（新窗口自动加入）" :
+            $"观测范围：指定进程（{AllowedProcesses.Count} 个）") + " · " + ModeText;
+    }
+
 
     public VisionWindow(AppSettings settings, IServiceHost? host)
     {
@@ -33,8 +66,21 @@ public partial class VisionWindow : Window
         _settings = settings;
         _host = host;
         StateChanged += (_, _) => Shell.Margin = WindowState == WindowState.Maximized ? new Thickness(6) : new Thickness(12);
-        _timer.Tick += (_, _) => { if (IsActive || _lastRequests != 0) RefreshStatus(); };
-        Loaded += (_, _) => { LoadWindows(); RefreshStatus(); _timer.Start(); };
+        _timer.Tick += (_, _) =>
+        {
+            if (IsActive)
+            {
+                try
+                {
+                    var ws = Win32.ListWindows();
+                    if (ws.Count != _all.Count || ws.Any(w => !_all.Any(old => old.Hwnd == w.Hwnd && old.Pid == w.Pid)))
+                        LoadWindows();
+                }
+                catch (Exception ex) { AppLog.Error("视觉窗口刷新", ex); }
+            }
+            if (IsActive || _lastRequests != 0) { RefreshScope(); RefreshStatus(); }
+        };
+        Loaded += (_, _) => { LoadWindows(); RefreshScope(); RefreshStatus(); _timer.Start(); };
         Closed += (_, _) => _timer.Stop();
         Activated += (_, _) => { if (IsLoaded) RefreshStatus(); };
     }
@@ -74,9 +120,9 @@ public partial class VisionWindow : Window
             StopText.Text = stop ? "解除紧急停止" : "紧急停止";
             BtnStop.Background = (Brush)FindResource(stop ? "Green" : "Red");
             var desk = Win32.DesktopUnavailable();
-            var grants = GovernanceStore.Grants(true);
             StatusText.Text = (stop ? "⛔ 已紧急停止：AI 的所有界面和网页操作都会被拒绝。 " : "") +
-                              $"桌面：{(desk == null ? "可用" : desk)} · 有效授权 {grants.Count} 个 · 新授权用于「{ModeText}」模式";
+                               $"桌面：{(desk == null ? "可用" : desk)} · " +
+                               (ObserveAll ? "全部进程自动观测" : $"已选 {AllowedProcesses.Count} 个进程") + $" · {ModeText}";
             StatusText.Foreground = (Brush)FindResource(stop ? "Red" : "TextSecondary");
             var reqs = GovernanceStore.Requests();
             if (reqs.Count != _lastRequests) BuildRequests(reqs);
@@ -120,7 +166,7 @@ public partial class VisionWindow : Window
     void Stop_Click(object s, RoutedEventArgs e)
     {
         bool stop = !GovernanceStore.GetBool("ui.stop");
-        if (!stop && !ZeroDialog.Show(this, new DialogSpec("解除紧急停止？", "解除后 AI 可以再次申请操作窗口（之前的授权已全部撤销，需要重新授权）。", DialogKind.Question, "解除"))) return;
+        if (!stop && !ZeroDialog.Show(this, new DialogSpec("解除紧急停止？", "解除后 AI 按观测范围和权限设置操作，不再需要逐窗口授权。", DialogKind.Question, "解除"))) return;
         Try(stop ? "紧急停止" : "解除紧急停止", () => GovernanceStore.EmergencyStop(stop));
         _lastRequests = -1;
         RefreshStatus();
@@ -185,35 +231,19 @@ public partial class VisionWindow : Window
         }
         var info = Win32.Info(w.Hwnd);
         bool alive = info != null && info.Pid == w.Pid;
-        var grant = GovernanceStore.Grants(true).FirstOrDefault(g => g.Hwnd == w.Hwnd && g.Pid == w.Pid && g.Mode == Mode);
+        bool observable = InScope(w);
         bool prot = IsProtected(w.Process, w.Pid);
         WinTitle.Text = w.Title.Length > 0 ? w.Title : "（无标题）";
         WinMeta.Text = $"{w.Process} · PID {w.Pid} · hwnd {w.Hwnd} · 类名 {w.Class} · {(info ?? w).W}×{(info ?? w).H}" +
                        (!alive ? " · 窗口已关闭" : "") +
-                       (prot ? " · 受保护的窗口（AI 不能观察或操作）" : grant != null ? $" · 已授权 AI 操作（{ModeText}，到 {grant.Expires:HH:mm}）" : " · 未授权 AI 操作");
-        WinMeta.Foreground = (Brush)FindResource(grant != null ? "Orange" : "TextSecondary");
+                       (prot ? " · 受保护" : observable ? " · AI 可观测" : " · 未加入 AI 可观测范围") +
+                       (w.Minimized ? " · 最小化（截图可能不可用）" : "");
+        WinMeta.Foreground = (Brush)FindResource(observable ? "Orange" : "TextSecondary");
         WinButtons.Children.Add(Btn("刷新画面", Capture));
         WinButtons.Children.Add(Btn("读取控件树", () => _ = LoadTree()));
-        if (alive && !prot && !GovernanceStore.GetBool("ui.stop"))
-        {
-            if (grant == null)
-            {
-                foreach (var m in new[] { 15, 30, 60 })
-                {
-                    var mins = m;
-                    WinButtons.Children.Add(Btn($"授权 AI 操作 {mins} 分钟", () =>
-                    {
-                        if (!ZeroDialog.Show(this, new DialogSpec("授权 AI 操作这个窗口？",
-                                $"在接下来 {mins} 分钟内，连接的 AI（{ModeText}模式）可以点击、输入、操作「{WinTitle.Text}」中的控件。\n可以随时在这里撤销或紧急停止。",
-                                DialogKind.Warning, "授权"))) return;
-                        Try($"授权窗口 {w.Hwnd}", () => GovernanceStore.AddGrant(Mode, w.Hwnd, w.Pid, w.Process, w.Title, mins));
-                        RefreshStatus(); ShowWindow();
-                    }, mins == 30));
-                }
-            }
-            else
-                WinButtons.Children.Add(Btn("撤销授权", () => { Try($"撤销授权 {grant.Id}", () => GovernanceStore.RevokeGrant(grant.Id)); RefreshStatus(); ShowWindow(); }, danger: true));
-        }
+        if (alive && !prot && !ObserveAll)
+            WinButtons.Children.Add(Btn(observable ? "移出观测" : "加入观测",
+                () => ToggleProcess(w), primary: !observable, danger: observable));
         if (_view == "shot") Capture();
     }
 
@@ -225,7 +255,7 @@ public partial class VisionWindow : Window
         {
             var img = Win32.Capture(w.Hwnd);
             Shot.Source = Win32.ToBitmap(img);
-            ShotHint.Text = "";
+            ShotHint.Text = w.Minimized ? "窗口最小化时可能显示缓存帧，可使用控件树查看实时状态。" : "";
         }
         catch (Exception ex)
         {

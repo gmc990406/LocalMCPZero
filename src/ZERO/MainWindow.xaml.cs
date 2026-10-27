@@ -618,6 +618,35 @@ public partial class MainWindow : Window, IServiceHost
     bool _govReady;
     bool _scanRunning;
     int _lastUiRequests, _lastPending;
+    readonly HashSet<int> _knownVisionPids = new();
+    bool _visionProcessesInitialized;
+    bool _visionToastClickedAvailable;
+
+    // 右下角 Windows 托盘通知：按 PID 发现新启动的有窗口进程，不弹窗抢焦点。
+    void NotifyNewVisionProcesses()
+    {
+        var ws = Win32.ListWindows();
+        var current = ws.Where(w => w.Pid != Environment.ProcessId &&
+            w.Process is not ("consent.exe" or "LogonUI.exe" or "CredentialUIBroker.exe" or "LockApp.exe"))
+            .GroupBy(w => w.Pid).Select(g => g.First()).ToList();
+        if (!_visionProcessesInitialized)
+        {
+            foreach (var w in current) _knownVisionPids.Add(w.Pid);
+            _visionProcessesInitialized = true;
+            return;
+        }
+        var added = current.Where(w => _knownVisionPids.Add(w.Pid)).ToList();
+        if (added.Count == 0 || _tray == null) return;
+        string mode = _state == State.Running ? (_runningFull ? "full" : "restricted") :
+                      (ModeFull.IsChecked == true ? "full" : "restricted");
+        bool all = GovernanceStore.Get("ui.observe_mode." + mode) == "all";
+        var names = string.Join("、", added.Take(3).Select(w => w.Process));
+        _visionToastClickedAvailable = true;
+        _tray.ShowBalloonTip(5000, "ZERO · 新进程已发现",
+            names + (added.Count > 3 ? $" 等 {added.Count} 个" : "") +
+            (all ? " 已自动加入 AI 观测范围" : " 点击此通知，在视觉工作台选择是否加入观测"),
+            Forms.ToolTipIcon.Info);
+    }
 
     void InitGovernance()
     {
@@ -642,6 +671,7 @@ public partial class MainWindow : Window, IServiceHost
         if (!_govReady) return;
         try
         {
+            NotifyNewVisionProcesses();
             int reqs = GovernanceStore.Requests().Count;
             var o = GovernanceStore.Overview();
             int pending = (int)(o.DecisionsPending + o.TasksReview);
@@ -927,6 +957,12 @@ public partial class MainWindow : Window, IServiceHost
 
         _tray = new Forms.NotifyIcon { Icon = icon, Text = "ZERO", Visible = true, ContextMenuStrip = menu };
         _tray.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) Dispatcher.Invoke(ShowFromTray); };
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            if (!_visionToastClickedAvailable) return;
+            _visionToastClickedAvailable = false;
+            Dispatcher.BeginInvoke(() => BtnVision_Click(this, new RoutedEventArgs()));
+        };
     }
 
     void HideToTray()

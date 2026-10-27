@@ -55,6 +55,7 @@ public static class Permissions
             "history" => s.HistoryShare,
             "memory_write" => s.MemoryWrite,
             "governance" => s.MemoryWrite,
+            "ui_control" => full, // 全电脑模式可统一操作观测范围内的进程，不再逐窗口授权；已保存的关闭设置仍优先
             _ when p.OffByDefault => false,
             _ => full || p.RestrictedDefault,
         };

@@ -87,6 +87,10 @@
     "ui.lock_seconds": "60",
     "browser.allow": "localhost,127.0.0.1,[::1]",
     "browser.headless": "1",
-    "hint.minutes": "30"
+    "hint.minutes": "30",
+    "ui.observe_mode.full": "all",
+    "ui.observe_mode.restricted": "selected",
+    "ui.allowed_processes.full": "",
+    "ui.allowed_processes.restricted": ""
   }
 }

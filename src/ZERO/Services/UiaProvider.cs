@@ -31,6 +31,7 @@ public static class Win32
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT wp);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int n);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder sb, int n);
@@ -59,6 +60,13 @@ public static class Win32
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
 
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct WINDOWPLACEMENT
+    {
+        public int Length, Flags, ShowCmd;
+        public POINT MinPosition, MaxPosition;
+        public RECT NormalPosition;
+    }
     [StructLayout(LayoutKind.Sequential)]
     struct BITMAPINFOHEADER
     {
@@ -130,14 +138,24 @@ public static class Win32
         finally { CloseDesktop(d); }
     }
 
-    /// <summary>窗口截图：返回 BGRA 像素（自上而下），PrintWindow 失败或窗口最小化时抛出异常</summary>
+    /// <summary>窗口后台截图：PrintWindow 支持被遮挡窗口；最小化窗口会尝试捕获，但图像可能为缓存或不可用。</summary>
     public static (byte[] Bgra, int W, int H) Capture(long hwnd)
     {
         var h = new IntPtr(hwnd);
         if (!IsWindow(h)) throw new InvalidOperationException("窗口不存在或已关闭");
-        if (IsIconic(h)) throw new InvalidOperationException("窗口已最小化，无法截图");
+        bool minimized = IsIconic(h);
         GetWindowRect(h, out var r);
         int w = r.Right - r.Left, ht = r.Bottom - r.Top;
+        if (minimized)
+        {
+            var wp = new WINDOWPLACEMENT { Length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+            if (GetWindowPlacement(h, ref wp))
+            {
+                int rw = wp.NormalPosition.Right - wp.NormalPosition.Left;
+                int rh = wp.NormalPosition.Bottom - wp.NormalPosition.Top;
+                if (rw > 0 && rh > 0) { w = rw; ht = rh; }
+            }
+        }
         if (w <= 0 || ht <= 0) throw new InvalidOperationException("窗口大小为 0");
         var sdc = GetDC(IntPtr.Zero);
         var mdc = CreateCompatibleDC(sdc);
@@ -145,11 +163,20 @@ public static class Win32
         var old = SelectObject(mdc, bmp);
         try
         {
-            if (!PrintWindow(h, mdc, 2)) throw new InvalidOperationException("PrintWindow 失败（窗口可能不支持或桌面不可用）");   // PW_RENDERFULLCONTENT
+            if (!PrintWindow(h, mdc, 2)) throw new InvalidOperationException("目标窗口未提供可用后台画面（最小化窗口可能无法渲染），可尝试控件树；ZERO 不会自动还原窗口");   // PW_RENDERFULLCONTENT
             var bi = new BITMAPINFOHEADER { biSize = 40, biWidth = w, biHeight = -ht, biPlanes = 1, biBitCount = 32 };
             var buf = new byte[w * ht * 4];
             SelectObject(mdc, old);
             if (GetDIBits(mdc, bmp, 0, (uint)ht, buf, ref bi, 0) == 0) throw new InvalidOperationException("读取截图像素失败");
+            // 某些被最小化的应用 PrintWindow 会“成功”却只返回近乎全黑的空画面。
+            int sample = 0, dark = 0, stride = Math.Max(4, (buf.Length / 4 / 2000) * 4);
+            for (int i = 0; i < buf.Length - 3; i += stride)
+            {
+                sample++;
+                if (Math.Max(buf[i], Math.Max(buf[i + 1], buf[i + 2])) < 24) dark++;
+            }
+            if (sample == 0 || (double)dark / sample > 0.97)
+                throw new InvalidOperationException("后台截图接近全黑，无法确认是真实画面；请使用控件树观察，不强制还原窗口");
             for (int i = 3; i < buf.Length; i += 4) buf[i] = 255;
             return (buf, w, ht);
         }
@@ -533,16 +560,34 @@ public static class UiaProvider
                 ((ScrollItemPattern)si).ScrollIntoView();
                 break;
             case "type":
-                EnsureInput(hwnd);
-                try { e.SetFocus(); } catch { }
-                Thread.Sleep(80);
-                Win32.TypeText(value ?? "");
+                if (!Win32.IsForeground(hwnd) && e.TryGetCurrentPattern(ValuePattern.Pattern, out var bgvp))
+                {
+                    var backValuePattern = (ValuePattern)bgvp;
+                    if (backValuePattern.Current.IsReadOnly) throw new UiaError("READ_ONLY", "后台文本框不可写入（ValuePattern 只读）");
+                    backValuePattern.SetValue(backValuePattern.Current.Value + (value ?? "")); // 保留 type 的追加语义
+                }
+                else
+                {
+                    EnsureInput(hwnd);
+                    try { e.SetFocus(); } catch { }
+                    Thread.Sleep(80);
+                    Win32.TypeText(value ?? "");
+                }
                 break;
             case "click":
             case "double_click":
             case "right_click":
             case "scroll":
             {
+                // 对后台或最小化窗口：普通单击优先通过 UIA 控件模式执行，不改变焦点。
+                if (action == "click" && !Win32.IsForeground(hwnd))
+                {
+                    if (e.TryGetCurrentPattern(InvokePattern.Pattern, out var bgip)) ((InvokePattern)bgip).Invoke();
+                    else if (e.TryGetCurrentPattern(TogglePattern.Pattern, out var bgtp)) ((TogglePattern)bgtp).Toggle();
+                    else if (e.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var bgsp)) ((SelectionItemPattern)bgsp).Select();
+                    else throw new UiaError("BACKGROUND_INPUT_UNSUPPORTED", "控件没有可用的 UIA 后台点击模式，ZERO 不会抢前台");
+                    break;
+                }
                 EnsureInput(hwnd);
                 var cur = Refresh(e);
                 if (P(cur, AutomationElement.BoundingRectangleProperty) is not Rect r || r.IsEmpty || r.Width < 1)
@@ -571,16 +616,13 @@ public static class UiaProvider
         return (wi.X + x, wi.Y + y);
     }
 
-    /// <summary>真实输入前：桌面必须可用，目标窗口必须在前台（自动激活一次）</summary>
+    /// <summary>真实鼠标键盘属于全局设备，不能后台定向投递；只允许目标已在前台，绝不自动抢焦点。</summary>
     static void EnsureInput(long hwnd)
     {
         if (Win32.DesktopUnavailable() is { } why) throw new UiaError("DESKTOP_UNAVAILABLE", why);
         if (!Win32.IsForeground(hwnd))
-        {
-            Win32.Window(hwnd, "activate");
-            Thread.Sleep(250);
-            if (!Win32.IsForeground(hwnd)) throw new UiaError("NOT_FOREGROUND", "无法把目标窗口切换到前台，模拟输入可能发到其他窗口，已取消");
-        }
+            throw new UiaError("BACKGROUND_INPUT_UNSUPPORTED",
+                "鼠标和物理键盘不能安全地定向输入后台窗口。ZERO 不会抢前台；请使用 invoke、set_value、toggle 等 UIA 后台操作，或改用独立浏览器。");
     }
 
     // ====================== 图片比较 ======================
